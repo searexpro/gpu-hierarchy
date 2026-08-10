@@ -1,0 +1,1116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GPU Performance Hierarchy 2026</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface2: #22263a;
+    --border: #2e3352;
+    --text: #e8eaf0;
+    --text-dim: #8890b0;
+    --text-faint: #555a78;
+    --accent: #4f9cf9;
+    --accent2: #7c5cfc;
+    --green: #3ecf8e;
+    --red: #f87171;
+    --gold: #f5c842;
+    --radius: 8px;
+    --font-mono: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+    --font-ui: 'Inter', 'Segoe UI', system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-ui);
+    font-size: 14px;
+    line-height: 1.5;
+    min-height: 100vh;
+  }
+
+  /* ── Header ── */
+  .site-header {
+    background: linear-gradient(135deg, #0f1117 0%, #1a1d27 50%, #161b2e 100%);
+    border-bottom: 1px solid var(--border);
+    padding: 32px 24px 24px;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+  }
+  .site-header::before {
+    content: '';
+    position: absolute;
+    top: -60px; left: 50%; transform: translateX(-50%);
+    width: 600px; height: 200px;
+    background: radial-gradient(ellipse, rgba(79,156,249,0.12) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .site-header h1 {
+    font-size: clamp(20px, 4vw, 32px);
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    color: #fff;
+    position: relative;
+  }
+  .site-header h1 span { color: var(--accent); }
+  .site-header p {
+    color: var(--text-dim);
+    font-size: 13px;
+    margin-top: 8px;
+    position: relative;
+  }
+  .badge-row {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    margin-top: 14px;
+    flex-wrap: wrap;
+    position: relative;
+  }
+  .badge {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 3px 12px;
+    font-size: 11px;
+    color: var(--text-dim);
+    font-weight: 500;
+  }
+  .badge.green { border-color: rgba(62,207,142,0.4); color: var(--green); }
+  .badge.blue { border-color: rgba(79,156,249,0.4); color: var(--accent); }
+  .badge-link { text-decoration: none; display: inline-block; transition: transform 0.1s; }
+  .badge-link:hover { transform: translateY(-1px); }
+  .badge-link:hover .badge { border-color: var(--accent); color: var(--text); cursor: pointer; }
+
+  /* ── Nav tabs ── */
+  .nav-tabs {
+    display: flex;
+    gap: 2px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 0 24px;
+    overflow-x: auto;
+  }
+  .nav-tab {
+    padding: 12px 20px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-dim);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    white-space: nowrap;
+    transition: color 0.15s, border-color 0.15s;
+    background: none;
+    border-top: none;
+    border-left: none;
+    border-right: none;
+    margin-bottom: -1px;
+  }
+  .nav-tab:hover { color: var(--text); }
+  .nav-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+  .hier-mode-toggle {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 14px;
+  }
+  .mode-btn {
+    padding: 8px 16px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-dim);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s, background 0.15s;
+    font-family: inherit;
+  }
+  .mode-btn:hover { color: var(--text); }
+  .mode-btn.active { color: var(--accent); border-color: var(--accent); background: rgba(79,156,249,0.08); }
+
+  /* ── Main layout ── */
+  .main { max-width: 1400px; margin: 0 auto; padding: 24px; }
+  .panel { display: none; }
+  .panel.active { display: block; }
+
+  /* ── Compare panel ── */
+  .cmp-wrap {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    margin-bottom: 0;
+  }
+  .cmp-sel-row {
+    display: flex;
+    align-items: center;
+    padding: 16px;
+    gap: 0;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface2);
+    position: relative;
+  }
+  .cmp-tier-col  { flex: 0 0 9.0909%; }
+  .cmp-left-col  { flex: 0 0 45.4545%; display:flex; justify-content:center; }
+  .cmp-mid-col   { position: absolute; left: 54.5454%; top: 50%; transform: translate(-50%, -50%); }
+  .cmp-right-col { flex: 0 0 45.4545%; display:flex; justify-content:center; }
+  .col-seg { width: 9.0909%; }
+  .ch-tier { text-align:left; padding:8px 16px; font-size:10px; color:var(--text-faint); text-transform:uppercase; letter-spacing:0.08em; }
+  .compare-table th.ch-gpu  { text-align:center; padding:8px 16px; font-size:12px; font-weight:700; letter-spacing:0.03em; }
+  .compare-table th.ch-diff { text-align:center; padding:6px 2px; font-size:9px; font-weight:600; color:var(--text-faint); text-transform:uppercase; letter-spacing:0.02em; line-height:1.25; white-space:normal; }
+  .cmp-specs { border-top: 1px solid var(--border); }
+  .cmp-specs-header { background:var(--surface2); padding:10px 16px; font-size:11px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:var(--text-dim); }
+  .spec-row { display:flex; border-top:1px solid var(--border); align-items:center; }
+  .spec-row .sr-label { flex:0 0 9.0909%; padding:11px 16px; font-size:12px; font-weight:600; color:var(--text-dim); }
+  .spec-row .sr-left  { flex:0 0 45.4545%; padding:11px 16px; font-size:13px; color:#7cb9ff; font-weight:500; text-align:center; border-left:1px solid var(--border); }
+  .spec-row .sr-div   { flex:0 0 0px; width:1px; background:var(--border); align-self:stretch; }
+  .spec-row .sr-right { flex:0 0 45.4545%; padding:11px 16px; font-size:13px; color:#b49eff; font-weight:500; text-align:center; border-left:1px solid var(--border); }
+
+  /* ── Compare panel ── */
+  .compare-grid {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 0;
+    margin-bottom: 24px;
+  }
+  .compare-grid .gpu-card {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+  .compare-grid .vs-divider {
+    flex: 0 0 56px;
+    width: 56px;
+    padding-top: 0;
+  }
+  .gpu-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .gpu-card-header {
+    padding: 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .gpu-card-header label {
+    display: block;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin-bottom: 8px;
+  }
+  .gpu-select {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-family: var(--font-ui);
+    font-size: 13px;
+    font-weight: 600;
+    padding: 10px 12px;
+    cursor: pointer;
+    outline: none;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%238890b0' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    padding-right: 36px;
+  }
+  .gpu-select:focus { border-color: var(--accent); }
+  .gpu-select option { background: #1a1d27; }
+  #left-select { border-color: rgba(79,156,249,0.5); }
+  #right-select { border-color: rgba(124,92,252,0.5); }
+
+  .vs-divider {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding-top: 0;
+  }
+  .vs-badge {
+    background: var(--bg);
+    border: 2px solid var(--border);
+    border-radius: 50%;
+    width: 38px; height: 38px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 800;
+    color: var(--text-dim);
+    letter-spacing: 0.05em;
+    margin: 0 auto;
+    position: relative;
+    z-index: 1;
+  }
+
+  /* Compare results table */
+  .compare-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    margin-bottom: 20px;
+  }
+  .compare-table th {
+    background: var(--surface2);
+    padding: 10px 16px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    text-align: center;
+  }
+  .compare-table th:first-child { text-align: left; }
+  .compare-table td:nth-child(2), .compare-table td:nth-child(6) { text-align: center; }
+  .compare-table th { text-align: center; }
+  .compare-table th:first-child { text-align: left; }
+  .compare-table td {
+    padding: 14px 16px;
+    text-align: center;
+    border-top: 1px solid var(--border);
+    font-size: 14px;
+  }
+  .compare-table td:first-child {
+    text-align: left;
+    font-weight: 700;
+    color: var(--text-dim);
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .compare-table tr.highlight td { background: rgba(79,156,249,0.04); }
+  .cmp-section-row td {
+    padding: 10px 16px;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text);
+    background: rgba(124,92,252,0.10);
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+  }
+  .compare-table tr.cmp-steam-row td {
+    background: rgba(79,156,249,0.07);
+    border-top: 1px solid rgba(79,156,249,0.2);
+    border-bottom: 1px solid rgba(79,156,249,0.2);
+  }
+  .fps-big {
+    font-family: var(--font-mono);
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--text);
+  }
+  .fps-pct {
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-top: 2px;
+  }
+  .diff-cell {
+    font-family: var(--font-mono);
+    font-size: 15px;
+    font-weight: 700;
+  }
+  .diff-pos { color: var(--green); }
+  .diff-neg { color: var(--red); }
+  .diff-neu { color: var(--text-dim); }
+
+  /* Specs section */
+  .specs-grid {
+    display: grid;
+    grid-template-columns: 18% 1fr 8% 1fr;
+    gap: 0;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 0 0 var(--radius) var(--radius);
+    overflow: hidden;
+  }
+  .specs-header {
+    grid-column: 1 / -1;
+    background: var(--surface2);
+    padding: 10px 16px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    border-bottom: 1px solid var(--border);
+  }
+  .spec-label {
+    padding: 12px 16px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-dim);
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+  }
+  .spec-val {
+    padding: 12px 16px;
+    font-size: 13px;
+    color: var(--text);
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    font-weight: 500;
+  }
+  .spec-val.left { color: #7cb9ff; justify-content: center; text-align: center; }
+  .spec-val.right { color: #b49eff; justify-content: center; text-align: center; }
+  .spec-div {
+    padding: 12px 4px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .spec-div-line {
+    width: 1px;
+    height: 100%;
+    background: var(--border);
+    min-height: 20px;
+  }
+
+  /* ── Hierarchy panel ── */
+  .controls {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .search-box {
+    flex: 1;
+    min-width: 200px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-family: var(--font-ui);
+    font-size: 13px;
+    padding: 9px 14px;
+    outline: none;
+  }
+  .search-box:focus { border-color: var(--accent); }
+  .search-box::placeholder { color: var(--text-faint); }
+  .filter-select {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-family: var(--font-ui);
+    font-size: 13px;
+    padding: 9px 30px 9px 12px;
+    outline: none;
+    cursor: pointer;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%238890b0' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+  }
+  .filter-select:focus { border-color: var(--accent); }
+  .filter-select option { background: #1a1d27; }
+  .sort-btn {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text-dim);
+    font-family: var(--font-ui);
+    font-size: 12px;
+    font-weight: 600;
+    padding: 9px 14px;
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+  }
+  .sort-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .sort-btn.active { background: rgba(79,156,249,0.1); border-color: var(--accent); color: var(--accent); }
+
+  .results-count {
+    font-size: 12px;
+    color: var(--text-faint);
+    margin-bottom: 12px;
+  }
+
+  /* Hierarchy table */
+  .hier-table-wrap { overflow-x: auto; }
+  .hier-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  .hier-table thead th {
+    background: var(--surface2);
+    padding: 10px 12px;
+    text-align: left;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+    cursor: pointer;
+    user-select: none;
+  }
+  .hier-table thead th:hover { color: var(--text); }
+  .hier-table thead th.sorted { color: var(--accent); }
+  .hier-table thead th .sort-arrow { margin-left: 4px; opacity: 0.5; }
+  .hier-table thead th.sorted .sort-arrow { opacity: 1; }
+  .hier-table tbody tr {
+    border-bottom: 1px solid rgba(46,51,82,0.5);
+    transition: background 0.1s;
+    cursor: default;
+  }
+  .hier-table tbody tr:hover { background: rgba(79,156,249,0.05); }
+  .hier-table tbody td {
+    padding: 9px 12px;
+    vertical-align: middle;
+  }
+  .rank-num {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-faint);
+    font-weight: 500;
+    text-align: right;
+    padding-right: 8px;
+    width: 36px;
+  }
+  .gpu-name-cell {
+    font-weight: 600;
+    white-space: nowrap;
+    max-width: 240px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .type-pill {
+    display: inline-block;
+    padding: 1px 7px;
+    border-radius: 10px;
+    font-size: 10px;
+    font-weight: 700;
+    margin-left: 6px;
+    vertical-align: middle;
+  }
+  .type-laptop { background: rgba(79,156,249,0.15); color: #7cb9ff; }
+  .type-console { background: rgba(245,200,66,0.15); color: #f5c842; }
+  .fps-cell {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    font-weight: 600;
+    text-align: right;
+    white-space: nowrap;
+  }
+  .fps-cell .fps-val { color: var(--text); }
+  .fps-cell .fps-pct-small {
+    font-size: 10px;
+    color: var(--text-faint);
+    margin-left: 4px;
+    font-weight: 500;
+  }
+  .conf-mark {
+    color: var(--accent);
+    font-weight: 700;
+    font-size: 12px;
+    margin-left: 1px;
+    cursor: help;
+    letter-spacing: -1px;
+  }
+  .fps-cell.italic-est .fps-val { color: var(--text-dim); font-style: italic; }
+  .bar-cell { width: 100px; padding: 9px 12px; }
+  .bar-wrap {
+    height: 4px;
+    background: var(--surface2);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .bar-fill {
+    height: 100%;
+    border-radius: 2px;
+    transition: width 0.3s;
+  }
+  .arch-cell {
+    font-size: 11px;
+    color: var(--text-dim);
+    white-space: nowrap;
+  }
+  .mem-cell {
+    font-size: 12px;
+    color: var(--text-dim);
+    white-space: nowrap;
+    font-family: var(--font-mono);
+  }
+
+  /* Color dot */
+  .color-dot {
+    display: inline-block;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    margin-right: 8px;
+    flex-shrink: 0;
+    vertical-align: middle;
+  }
+
+  /* Source badge */
+  .src-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 10px;
+    font-weight: 600;
+  }
+  .src-native { background: rgba(62,207,142,0.12); color: #3ecf8e; }
+  .src-extrap { background: rgba(245,200,66,0.12); color: #c9a227; }
+  .src-laptop { background: rgba(79,156,249,0.12); color: #4f9cf9; }
+  .src-console { background: rgba(167,139,250,0.12); color: #a78bfa; }
+
+  /* ── Footer / methodology ── */
+  .methodology {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    margin-top: 24px;
+    font-size: 12px;
+    color: var(--text-dim);
+    line-height: 1.7;
+  }
+  .methodology h3 {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 10px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .methodology p { margin-bottom: 8px; }
+  .methodology p:last-child { margin-bottom: 0; }
+
+  /* ── Responsive ── */
+  @media (max-width: 768px) {
+    .compare-grid { grid-template-columns: 1fr; gap: 12px; }
+    .vs-divider { display: none; }
+    .main { padding: 16px; }
+    .specs-grid { grid-template-columns: 120px 1fr; }
+    .spec-div, .spec-val.right { display: none; }
+    .sort-btn { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<header class="site-header">
+  <h1>GPU Performance <span>Hierarchy</span> 2026</h1>
+  <p>136 GPUs · Desktop, Laptop &amp; Console · Extrapolated to 2026 benchmark suite</p>
+  <div class="badge-row">
+    <a href="https://www.tomshardware.com/reviews/gpu-hierarchy,4388.html" target="_blank" rel="noopener" class="badge-link"><span class="badge blue">Tom's Hardware · Pulled Aug 1, 2026</span></a>
+    <a href="https://store.steampowered.com/hwsurvey/videocard/" target="_blank" rel="noopener" class="badge-link"><span class="badge">Steam Survey · Pulled Aug 9, 2026</span></a>
+    <a href="https://www.notebookcheck.net/Mobile-Graphics-Cards-Benchmark-List.844.0.html" target="_blank" rel="noopener" class="badge-link"><span class="badge">Notebookcheck · Pulled Aug 8, 2026</span></a>
+  </div>
+</header>
+
+<nav class="nav-tabs">
+  <button class="nav-tab active" onclick="showPanel('compare')">⚖️ Compare</button>
+  <button class="nav-tab" onclick="showPanel('hierarchy')">📊 Full Hierarchy</button>
+  <button class="nav-tab" onclick="showPanel('about')">ℹ️ Methodology</button>
+</nav>
+
+<main class="main">
+
+  <!-- ═══════════════ COMPARE PANEL ═══════════════ -->
+  <div class="panel active" id="panel-compare">
+
+    <!-- Selector row — 5 equal-ish cols matching table below -->
+    <div class="cmp-wrap">
+      <div class="cmp-sel-row">
+        <div class="cmp-tier-col"></div>
+        <div class="cmp-left-col">
+          <select class="gpu-select" id="left-select" onchange="updateCompare()"
+            style="border-color:rgba(79,156,249,0.5);width:60%;"></select>
+        </div>
+        <div class="cmp-mid-col"><div class="vs-badge">VS</div></div>
+        <div class="cmp-right-col">
+          <select class="gpu-select" id="right-select" onchange="updateCompare()"
+            style="border-color:rgba(124,92,252,0.5);width:60%;"></select>
+        </div>
+      </div>
+
+      <table class="compare-table" id="compare-table">
+        <colgroup>
+          <col class="col-seg"><col class="col-seg"><col class="col-seg"><col class="col-seg"><col class="col-seg">
+          <col class="col-seg"><col class="col-seg"><col class="col-seg"><col class="col-seg"><col class="col-seg">
+          <col class="col-seg">
+        </colgroup>
+        <thead>
+          <tr>
+            <th class="ch-tier" colspan="1"></th>
+            <th class="ch-gpu" id="th-left" colspan="3">—</th>
+            <th class="ch-diff" id="th-vs-right" colspan="2">vs Right →</th>
+            <th class="ch-diff" id="th-vs-left" colspan="2" style="border-left:1px solid var(--border);">← vs Left</th>
+            <th class="ch-gpu" id="th-right" colspan="3">—</th>
+          </tr>
+        </thead>
+        <tbody id="compare-tbody"></tbody>
+      </table>
+
+      <!-- Specs — same 5-col layout -->
+      <div class="cmp-specs" id="specs-grid">
+        <div class="cmp-specs-header">Specifications</div>
+        <div id="specs-rows"></div>
+      </div>
+    </div>
+
+  </div>
+
+    <!-- ═══════════════ HIERARCHY PANEL ═══════════════ -->
+  <div class="panel" id="panel-hierarchy">
+
+    <div class="hier-mode-toggle">
+      <button class="mode-btn active" id="mode-raster" onclick="setHierMode('raster')">⚖️ Rasterization</button>
+      <button class="mode-btn" id="mode-rt" onclick="setHierMode('rt')">🔆 Ray Tracing</button>
+    </div>
+
+
+    <div class="controls">
+      <input class="search-box" type="text" id="search-box"
+             placeholder="Search GPU name…" oninput="filterTable()">
+      <select class="filter-select" id="type-filter" onchange="filterTable()">
+        <option value="">All Types</option>
+        <option value="Desktop">Desktop</option>
+        <option value="Laptop">Laptop</option>
+        <option value="Console">Console</option>
+      </select>
+      <select class="filter-select" id="arch-filter" onchange="filterTable()">
+        <option value="">All Architectures</option>
+      </select>
+      <button class="sort-btn active" id="btn-comp" onclick="setSortCol('comp')">Composite ▾</button>
+      <button class="sort-btn" id="btn-4k" onclick="setSortCol('fps_4k')">4K Ultra</button>
+      <button class="sort-btn" id="btn-1440" onclick="setSortCol('fps_1440')">1440p</button>
+      <button class="sort-btn" id="btn-1080" onclick="setSortCol('fps_1080')">1080p</button>
+    </div>
+
+    <div class="results-count" id="results-count"></div>
+
+    <div class="hier-table-wrap">
+      <table class="hier-table" id="hier-table">
+        <thead>
+          <tr>
+            <th style="width:36px;">#</th>
+            <th onclick="setSortCol('gpu')" id="col-gpu">GPU <span class="sort-arrow">↕</span></th>
+            <th onclick="setSortCol('comp')" id="col-comp" class="sorted">Composite <span class="sort-arrow">↓</span></th>
+            <th onclick="setSortCol('fps_4k')" id="col-4k">4K Ultra <span class="sort-arrow">↕</span></th>
+            <th onclick="setSortCol('fps_1440')" id="col-1440">1440p Ultra <span class="sort-arrow">↕</span></th>
+            <th onclick="setSortCol('fps_1080')" id="col-1080">1080p Ultra <span class="sort-arrow">↕</span></th>
+            <th style="width:110px;">vs RTX 5090</th>
+            <th onclick="setSortCol('arch')" id="col-arch">Architecture <span class="sort-arrow">↕</span></th>
+            <th onclick="setSortCol('memory')" id="col-mem">Memory <span class="sort-arrow">↕</span></th>
+            <th onclick="setSortCol('wattage')" id="col-watt">TDP <span class="sort-arrow">↕</span></th>
+            <th>Source</th>
+          </tr>
+        </thead>
+        <tbody id="hier-tbody"></tbody>
+      </table>
+    </div>
+
+    <div class="methodology" style="margin-top:16px; padding: 12px 16px;">
+      <p style="font-size:11px; color: var(--text-faint);">
+        <strong style="color:var(--text-dim);">Italic values</strong> = extrapolated within the 2026 suite using local 10-anchor projection. 
+        <strong style="color:var(--text-dim);">Console fps</strong> = PC Ultra equivalent estimates; consoles use dynamic resolution at 4K.
+        Composite Avg = simple average of 4K Ultra + 1440p Ultra + 1080p Ultra.
+      </p>
+    </div>
+
+  </div>
+
+  <!-- ═══════════════ ABOUT PANEL ═══════════════ -->
+  <div class="panel" id="panel-about">
+    <div class="methodology">
+      <h3>Data Sources</h3>
+      <p><strong>Primary:</strong> Tom's Hardware GPU Benchmark Hierarchy, updated June 24, 2026 — 48 GPUs tested natively on Ryzen 7 9800X3D, 11 raster games, geometric mean fps, RTX 5090 as baseline. Three resolution tiers: 4K Ultra, 1440p Ultra, 1080p Ultra.</p>
+      <p><strong>Secondary:</strong> Tom's Hardware 2022–2024 hierarchy (Core i9-12900K testbed) — used to project performance for cards not covered in the 2026 suite.</p>
+      <p><strong>Tertiary:</strong> Tom's Hardware 2020–2021 composite scores — used only for cards not covered in the 2022–2024 suite.</p>
+    </div>
+    <div class="methodology" style="margin-top:12px;">
+      <h3>Projection Methodology</h3>
+      <p><strong>Era priority:</strong> 2026 native data &gt; 2022–2024 measured data &gt; 2020–2021 composite score.</p>
+      <p><strong>Local 10-anchor projection:</strong> For each card requiring projection, the 10 nearest-performing anchor cards (by fps at each resolution tier) in the overlap between datasets are identified. Their cross-era conversion ratios are averaged to project the target card's performance. This outperforms both all-anchor and downward-only methods in internal validation (MAPE reduction of ~30% at 1440p and 4K vs. all-anchor).</p>
+      <p><strong>Missing tiers:</strong> Cards without 4K or 1440p data have those tiers extrapolated from the same local-anchor method within the 2026 suite. Extrapolated values are shown in italic.</p>
+      <p><strong>Laptop GPUs:</strong> Each laptop GPU is tied to one ratio against its same-name desktop card, sourced from Notebookcheck's own direct laptop-vs-desktop statements and measured multi-game comparisons, cross-checked against Tom's Hardware's desktop figures already in this dataset. One ratio is applied uniformly across 1080p/1440p/4K, since resolution-specific laptop data isn't reliably available from a single consistent source. The gap ranges from about 11% at the low end of a generation's lineup to as much as 85% at the flagship tier — desktop cards get cut down harder at the low end (narrower memory bus, fewer cores) while laptop cards are relatively more power-limited at the top, so the two curves aren't parallel. The desktop card always wins; where the gap is unusually small, that's a verified real finding, not an estimate that broke.</p>
+      <p><strong>Console rasterization:</strong> Each console's figure is a blend of two real desktop GPUs, chosen from the best matched-hardware testing available for that device rather than compute-unit or teraflop specs alone (which routinely overstate console performance by a full tier). PS5 = 50% RX 6700 10GB + 50% RTX 2070 Super, per Digital Foundry's own on-record statement that PS5 "is still broadly equivalent to a 2070 Super, slightly worse than a 2080." Xbox Series X = 50% RX 6700 XT + 50% RTX 2080, per Digital Foundry's own early performance testing naming RTX 2080 directly — not the RX 6800 its CU count would imply. PS5 Pro = 50% RX 7700 XT + 50% RX 6800, chosen over RTX 3070 Ti (architecturally comparable, but its 8GB VRAM understates 4K performance in a way the console itself doesn't share). Steam Machine = 50% (90% of RX 7600) + 50% RX 6600 — not RX 7600 alone, despite the chip being an architecturally cut-down RX 7600 die (28 of 32 CUs); Gamers Nexus's retail-hardware review found real performance lands closer to RX 6600, with RX 7600 typically running ahead of it. Steam Deck = 50% GTX 1050 + 50% GTX 1050 Ti, and Xbox Series S = 50% GTX 1650 Super + 50% RX 5500 XT, both from consensus ranges across independent testing (Series S sourcing is the weakest of the six). Console 4K figures represent PC Ultra equivalent — actual console 4K uses dynamic resolution and upscaling.</p>
+
+      <p><strong>Console ray tracing:</strong> Extended to all six devices using the same matched-testing-first principle as rasterization. PS5 = 50% RTX 2060 + 50% RX 6700, and Xbox Series X = 50% RTX 2060 Super + 50% RX 6700 — non-XT even on the Series X side, since RX 6700 XT's own RT figure would push the estimate above the ceiling Digital Foundry's testing establishes. PS5 Pro = RTX 3070 alone, per Digital Foundry's Alan Wake 2 analysis. Steam Machine = 90% of RX 7600 alone, not blended with RTX 3060 — RX 7600 measurably underperforms RTX 3060 in ray tracing specifically (up to 22% slower in third-party testing), which makes a blend internally inconsistent even though it works fine for rasterization. Xbox Series S has no tested RT equivalent; its figure is derived by applying its compute-unit ratio to Series X's own RT figure (38.5%) and is flagged as a derived estimate, not a tested one. Steam Deck also has no equivalent card — its GPU has real hardware RT capability that its raster-anchor cards (GTX 1050/1050 Ti) categorically lack — so its figure comes from Digital Foundry's own direct measurement (Metro Exodus Enhanced, ~30fps at 896×504), extrapolated to standard resolutions by assuming performance scales with pixel count. That extrapolation gets less reliable the further from the tested resolution: treat 1080p as a reasonable estimate, 1440p as weaker, and 4K as directional only. See the confidence markers below for exactly how many estimation steps sit behind any individual number.</p>
+
+      <p><strong>Faster Than % of Steam Users:</strong> Sourced from Valve's July 2026 Steam Hardware & Software Survey. Steam names about 90 cards individually and folds everything else into a generic "Other" bucket (8.7% of respondents). Of those ~90 named cards, some are excluded from matching entirely — generic integrated-graphics labels, and untracked variants this tool doesn't carry (e.g. laptop RTX 3050). Where Steam merges two memory capacities of the same card into one undifferentiated line (RTX 4060 Ti, RTX 5060 Ti, RX 9060 XT), that share is assigned to the more powerful variant (16GB) rather than excluded — a deliberate conservative choice: it only changes the result for cards whose performance falls between the two variants, and the trade-off is that the slower (8GB) variant's own percentile doesn't get credit for any of that shared line. What's left is 57 cards matched by name to a card in this tool, covering 62.8% of the surveyed population — that 62.8%, not 100%, is the denominator. For any card, its percentage is the summed survey share of every matched card with a lower composite score (never counting itself or a tie), divided by 62.8%. This is why even the RTX 5090 doesn't show 100.0% — a small remainder of matched cards can still land above it in edge cases, and the figure is a share of the identifiable population, not a claim about literally every Steam user. Shown for every card in this tool, including laptops and consoles, since it only needs a composite score, not an actual Steam listing.</p>
+
+      <p><strong>Confidence markers (<span class="conf-mark">*</span>):</strong> Every calculated value carries a mark showing how many steps removed it is from an actual measurement — hover any marked value to see the specific chain. <strong>No mark</strong> = directly measured. <strong>*</strong> = one step (e.g. a 2022-2024-tested card projected to 2026). <strong>**</strong> = two steps (e.g. the 2020-2021 → 2022-2024 → 2026 double-hop, or a laptop ratio built on an already-projected desktop reference). <strong>***</strong> = three steps — typically a console figure built by blending two cards that are themselves projections. <strong>****</strong> = four or more steps, or a derived estimate rather than a tested equivalent (e.g. Xbox Series S ray tracing, scaled from Series X's own already-blended figure; Steam Deck ray tracing at 1440p/4K, extrapolated across resolutions from one real on-device measurement at a much lower resolution). More marks isn't a defect — it's this tool telling you exactly how far a number sits from something anyone actually measured, so you can weigh it accordingly.</p>
+    </div>
+    <div class="methodology" style="margin-top:12px;">
+      <h3>Limitations</h3>
+      <p>All projected figures are estimates. Real-world performance varies by game, driver version, CPU, and memory configuration. The benchmark suite uses specific game titles whose characteristics may not represent all gaming workloads. Composite average weights all three resolution tiers equally.</p>
+      <p>This tool is intended for relative comparison only. Figures should not be interpreted as guaranteed performance.</p>
+      <p style="margin-top:12px; color: var(--text-faint); font-size:11px;">Built with data from Tom's Hardware · Methodology validated against ChatGPT statistical analysis · Source data retrieved August 1–2, 2026</p>
+    </div>
+  </div>
+
+</main>
+
+<script>
+const GPU_DATA = [{"gpu": "GeForce RTX 5090", "comp": 160.6, "fps_4k": 110.8, "fps_1440": 167.3, "fps_1080": 203.8, "date": "01/30/2025", "arch": "Blackwell", "memory": "32GB GDDR7", "wattage": "575W", "source": "Native 2026 (TH June 24 2026)", "type": "Desktop", "color": "#B6D4B7", "comp_pct": 100.0, "fps_4k_pct": 100.0, "fps_1440_pct": 100.0, "fps_1080_pct": 100.0, "steam_pct_below": 99.3, "tier": 0}, {"gpu": "GeForce RTX 4090", "comp": 138.7, "fps_4k": 89.1, "fps_1440": 143.4, "fps_1080": 183.6, "date": "10/12/2022", "arch": "Ada Lovelace", "memory": "24GB GDDR6X", "wattage": "450W", "source": "Native 2026 (TH June 24 2026)", "type": "Desktop", "color": "#CADBB6", "comp_pct": 86.4, "fps_4k_pct": 80.4, "fps_1440_pct": 85.7, "fps_1080_pct": 90.1, "steam_pct_below": 98.2, "tier": 0}, {"gpu": "GeForce RTX 5080", "comp": 124.2, "fps_4k": 77.4, "fps_1440": 128.3, "fps_1080": 166.9, "date": "01/30/2025", "arch": "Blackwell", "memory": "16GB GDDR7", "wattage": "360W", "source": "Native 2026 (TH June 24 2026)", "type": "Desktop", "color": "#C8E6C9", "comp_pct": 77.3, "fps_4k_pct": 69.9, "fps_1440_pct": 76.7, "fps_1080_pct": 81.9, "steam_pct_below": 95.6, "tier": 0}, {"gpu": "Radeon RX 7900 XTX", "comp": 118.1, "fps_4k": 70.6, "fps_1440": 122.3, "fps_1080": 161.5, "date": "12/13/2022", "arch": "RDNA 3", "memory": "24GB GDDR6", "wattage": "355W", "source": "Native 2026 (TH June 24 2026)", "type": "Desktop", "color": "#F7D792", "comp_pct": 73.5, "fps_4k_pct": 63.7, "fps_1440_pct": 73.1, "fps_1080_pct": 79.2, "steam_pct_below": 94.9, "tier": 0}, {"gpu": "GeForce RTX 4080 Super", "comp": 115.6, "fps_4k": 69.4, "fps_1440": 118.6, "fps_1080": 158.9, "date": "01/31/2024", "arch": "Ada Lovelace", "memory": "16GB GDDR6X", "wattage": "320W", "source": "Native 2026 (TH June 24 2026)", "type": "Desktop", "color": "#DCEDC8", "comp_pct": 72.0, "fps_4k_pct": 62.6, "fps_1440_pct": 70.9, "fps_1080_pct": 78.0, "steam_pct_below": 93.9, "tier": 0}, {"gpu": "GeForce RTX 5070 Ti", "comp": 113.6, "fps_4k": 68.6, "fps_1440": 116.8, "fps_1080": 155.4, "date": "02/20/2025", "arch": "Blackwell", "memory": "16GB GDDR7", "wattage": "300W", "source": "Native 2026 (TH June 24 2026)", "type": "Desktop", "color": "#B6D4B7", "comp_pct": 70.7, "fps_4k_pct": 61.9, "fps_1440_pct": 69.8, "fps_1080_pct": 76.3, "steam_pct_below": 90.0, "tier": 0}, {"gpu": "GeForce RTX 4080", "comp": 114.1, "fps_4k": 67.5, "fps_1440": 117.5, "fps_1080": 157.3, "date": "11/16/2022", "arch": "Ada Lovelace", "memory": "16GB GDDR6X", "wattage": "320W", "source": "Native 2026 (TH June 24 2026)", "type": "Desktop", "color": "#CADBB6", "comp_pct": 71.0, "fps_4k_pct": 60.9, "fps_1440_pct": 70.2, "fps_1080_pct": 77.2, "steam_pct_below": 92.8, "tier": 0}, {"gpu": "Radeon RX 9070 XT", "comp": 113.0, "fps_4k": 65.8, "fps_1440": 116.5, "fps_1080": 156.6, "date": "03/06/2025", "arch": "RDNA 4", "memory": "16GB GDDR6", "wattage": "304W", "source": "Native 2026 (TH June 24 2026)", "type": "Desktop", "color": "#EDBBC0", "comp_pct": 70.4, "fps_4k_pct": 59.4, "fps_1440_pct": 69.6, "fps_1080_pct": 76.8, "steam_pct_below": 87.7, "tier": 0}, {"gpu": "Radeon RX 7900 XT", "comp": 104.4, "fps_4k": 59.8, "fps_1440": 108.0, "fps_1080": 145.4, "date": "12/13/2022", "arch": "RDNA 3", "memory": "20GB GDDR6", "wattage": "315W", "source": "Native 2026 (TH June 24 2026)", "type": "Desktop", "color": "#FFE0B2", "comp_pct": 65.0, "fps_4k_pct": 54.0, "fps_1440_pct": 64.6, "fps_1080_pct": 71.3, "steam_pct_below": 87.2, "tier": 0}, {"gpu": "GeForce RTX 3090 Ti", "comp": 97.0, "fps_4k": 59.3, "fps_1440": 99.9, "fps_1080": 131.7, "date": "03/29/2022", "arch": "Ampere", "memory": "24GB GDDR6X", "wattage": "450W", "source": "Native 2026 (TH June 24 2026)", "type": "Desktop", "color": "#DFE6D7", "comp_pct": 60.4, "fps_4k_pct": 53.5, "fps_1440_pct": 59.7, "fps_1080_pct": 64.6, "steam_pct_below": 85.7, "tier": 0}, {"gpu": "GeForce RTX 4070 Ti Super", "comp": 101.2, "fps_4k": 58.5, "fps_1440": 104.0, "fps_1080": 141.2, "date": "01/24/2024", "arch": "Ada Lovelace", "memory": "16GB GDDR6X", "wattage": "285W", "source": "Native 2026 (TH June 24 2026)", "type": "Desktop", "color": "#DCEDC8", "comp_pct": 63.0, "fps_4k_pct": 52.8, "fps_1440_pct": 62.2, "fps_1080_pct": 69.3, "steam_pct_below": 86.0, "tier": 0}, {"gpu": "GeForce RTX 4090 Laptop", "comp": 98.5, "fps_4k": 63.3, "fps_1440": 101.8, "fps_1080": 130.4, "date": "02/08/2023", "arch": "Ada Lovelace", "memory": "16GB GDDR6", "wattage": "150W", "source": "Laptop GPU Projection (Notebookcheck-verified ratio to same-name desktop, cross-checked vs Tom's Hardware)", "type": "Laptop", "color": "#CADBB6", "comp_pct": 61.3, "fps_4k_pct": 57.1, "fps_1440_pct": 60.8, "fps_1080_pct": 64.0, "steam_pct_below": 85.7, "tier": 1}, {"gpu": "Radeon RX 9070", "comp": 100.9, "fps_4k": 57.7, "fps_1440": 104.0, "fps_1080": 140.9, "date": "03/06/2025", "arch": "RDNA 4", "memory": "16GB GDDR6", "wattage": "220W", "source": "Native 2026 (TH June 24 2026)", "type": "Desktop", "color": "#FFCDD2", "comp_pct": 62.8, "fps_4k_pct": 52.1, "fps_1440_pct": 62.2, "fps_1080_pct": 69.1, "steam_pct_below": 85.7, "tier": 0}, {"gpu": "GeForce RTX 5070", "comp": 94.4, "fps_4k": 54.3, "fps_1440": 96.4, "fps_1080": 132.6, "date": "03/05/2025", "arch": "Blackwell", "memory": "12GB GDDR7", "wattage": "250W", "source": "Native 2026 (TH June 24 2026)", "type": "Desktop", "color": "#C8E6C9", "comp_pct": 58.8, "fps_4k_pct": 49.0, "fps_1440_pct": 57.6, "fps_1080_pct": 65.1, "steam_pct_below": 78.5, "tier": 0}, {"gpu": "GeForce RTX 4070 Ti", "comp": 95.6, "fps_4k": 53.9, "fps_1440": 97.9, "fps_1080": 135.1, "date": "01/05/2023", "arch": "Ada Lovelace", "memory": "12GB GDDR6X", "wattage": "285W", "source": "Native 2026 (TH June 24 2026)", "type": "Desktop", "color": "#DCEDC8", "comp_pct": 59.5, "fps_4k_pct": 48.6, "fps_1440_pct": 58.5, "fps_1080_pct": 66.3, "steam_pct_below": 84.3, "tier": 0}, {"gpu": "GeForce RTX 3090", "comp": 89.2, "fps_4k": 53.1, "fps_1440": 91.5, "fps_1080": 122.9, "date": "09/24/2020", "arch": "Ampere", "memory": "24GB GDDR6X", "wattage": "350W", "source": "Native 2026 (TH June 24 2026)", "type": "Desktop", "color": "#F1F8E9", "comp_pct": 55.5, "fps_4k_pct": 47.9, "fps_1440_pct": 54.7, "fps_1080_pct": 60.3, "steam_pct_below": 77.9, "tier": 0}, {"gpu": "GeForce RTX 5090 Laptop", "comp": 96.4, "fps_4k": 66.5, "fps_1440": 100.4, "fps_1080": 122.3, "date": "01/30/2025", "arch": "Blackwell", "memory": "32GB GDDR7", "wattage": "175W", "source": "Laptop GPU Projection (Notebookcheck-verified ratio to same-name desktop, cross-checked vs Tom's Hardware)", "type": "Laptop", "color": "#B6D4B7", "comp_pct": 60.0, "fps_4k_pct": 60.0, "fps_1440_pct": 60.0, "fps_1080_pct": 60.0, "steam_pct_below": 85.7, "tier": 1}, {"gpu": "GeForce RTX 3080 Ti", "comp": 86.6, "fps_4k": 51.0, "fps_1440": 89.1, "fps_1080": 119.6, "date": "06/03/2021", "arch": "Ampere", "memory": "12GB GDDR6X", "wattage": "350W", "source": "Native 2026 (TH June 24 2026)", "type": "Desktop", "color": "#DFE6D7", "comp_pct": 53.9, "fps_4k_pct": 46.0, "fps_1440_pct": 53.3, "fps_1080_pct": 58.7, "steam_pct_below": 74.7, "tier": 0}, {"gpu": "Radeon RX 7900 GRE", "comp": 89.7, "fps_4k": 49.9, "fps_1440": 91.5, "fps_1080": 127.8, "date": "08/25/2023", "arch": "RDNA 3", "memory": "16GB GDDR6", "wattage": "260W", "source": "Extrapolated (2022-2024 Data, Local 10-Anchor)", "type": "Desktop", "color": "#F7D792", "comp_pct": 55.9, "fps_4k_pct": 45.0, "fps_1440_pct": 54.7, "fps_1080_pct": 62.7, "steam_pct_below": 78.5, "tier": 1}, {"gpu": "GeForce RTX 4070 Super", "comp": 89.0, "fps_4k": 49.2, "fps_1440": 91.2, "fps_1080": 126.7, "date": "01/17/2024", "arch": "Ada Lovelace", "memory": "12GB GDDR6X", "wattage": "220W", "source": "Native 2026 (TH June 24 2026)", "type": "Desktop", "color": "#CADBB6", "comp_pct": 55.4, "fps_4k_pct": 44.4, "fps_1440_pct": 54.5, "fps_1080_pct": 62.2, "steam_pct_below": 75.6, "tier": 0}, {"gpu": "Radeon RX 6950 XT", "comp": 87.0, "fps_4k": 48.3, "fps_1440": 89.5, "fps_1080": 123.3, "date": "05/10/2022", "arch": "RDNA 2", "memory": "16GB GDDR6", "wattage": "335W", "source": "Native 2026 (TH June 24 2026)", "type": "Desktop", "color": "#EDE1CE", "comp_pct": 54.2, "fps_4k_pct": 43.6, "fps_1440_pct": 53.5, "fps_1080_pct": 60.5, "steam_pct_below": 75.6, "tier": 0}, {"gpu": "GeForce RTX 3080 12GB", "comp": 82.9, "fps_4k": 47.1, "fps_1440": 85.3, "fps_1080": 116.4, "date": "01/11/2022", "arch": "Ampere", "memory": "12GB GDDR6X", "wattage": "400W", "source": "Extrapolated (2022-2024 Data, Local 10-Anchor)", "type": "Desktop", "color": "#F1F8E9", "comp_pct": 51.6, "fps_4k_pct": 42.5, "fps_1440_pct": 51.0, "fps_1080_pct": 57.1, "steam_pct_below": 74.7, "tier": 1}, {"gpu": "Radeon RX 9070 GRE", "comp": 84.5, "fps_4k": 46.3, "fps_1440": 86.6, "fps_1080": 120.6, "date": "03/06/2025", "arch": "RDNA 4", "memory": "12GB GDDR6", "wattage": "220W", "source": "Native 2026 (TH June 24 2026)", "type": "Desktop", "color": "#EDBBC0", "comp_pct": 52.6, "fps_4k_pct": 41.8, "fps_1440_pct": 51.8, "fps_1080_pct": 59.2, "steam_pct_below": 74.7, "tier": 0}, {"gpu": "Radeon RX 7800 XT", "comp": 82.7, "fps_4k": 45.1, "fps_1440": 84.7, "fps_1080": 118.4, "date": "09/06/2023", "arch": "RDNA 3", "memory": "16GB GDDR6", "wattage": "263W", "source": "Native 2026 (TH June 24 2026)", "type": "Desktop", "color": "#FFE0B2", "comp_pct": 51.5, "fps_4k_pct": 40.7, "fps_1440_pct": 50.6, "fps_1080_pct": 58.1, "steam_pct_below": 73.7, "tier": 0}, {"gpu": "Radeon RX 6900 XT", "comp": 82.0, "fps_4k": 44.9, "fps_1440": 83.9, "fps_1080": 117.1, "date": "12/08/2020", "arch": "RDNA 2", "memory": "16GB GDDR6", "wattage": "300W", "source": "Native 2026 (TH June 24 2026)", "type": "Desktop", "color": "#FFF3E0", "comp_pct": 51.1, "fps_4k_pct": 40.5, "fps_1440_pct": 50.1, "fps_1080_pct": 57.5, "steam_pct_below": 73.4, "tier": 0}, {"gpu": "GeForce RTX 3080", "comp": 79.2, "fps_4k": 43.9, "fps_1440": 82.0, "fps_1080": 111.6, "date": "09/17/2020", "arch": "Ampere", "memory": "10GB GDDR6X", "wattage": "320W", "source": "Native 2026 (TH June 24 2026)", "type": "Desktop", "color": "#DFE6D7", "comp_pct": 49.3, "fps_4k_pct": 39.6, "fps_1440_pct": 49.0, "fps_1080_pct": 54.8, "steam_pct_below": 70.9, "tier": 0}, {"gpu": "GeForce RTX 4080 Laptop", "comp": 79.8, "fps_4k": 47.2, "fps_1440": 82.2, "fps_1080": 110.1, "date": "02/08/2023", "arch": "Ada Lovelace", "memory": "12GB GDDR6X", "wattage": "150W", "source": "Laptop GPU Projection (Notebookcheck-verified ratio to same-name desktop, cross-checked vs Tom's Hardware)", "type": "Laptop", "color": "#DCEDC8", "comp_pct": 49.7, "fps_4k_pct": 42.6, "fps_1440_pct": 49.1, "fps_1080_pct": 54.0, "steam_pct_below": 73.1, "tier": 1}, {"gpu": "Radeon RX 6800 XT", "comp": 77.9, "fps_4k": 42.2, "fps_1440": 79.6, "fps_1080": 111.8, "date": "11/18/2020", "arch": "RDNA 2", "memory": "16GB GDDR6", "wattage": "300W", "source": "Native 2026 (TH June 24 2026)", "type": "Desktop", "color": "#EDE1CE", "comp_pct": 48.5, "fps_4k_pct": 38.1, "fps_1440_pct": 47.6, "fps_1080_pct": 54.9, "steam_pct_below": 70.5, "tier": 0}, {"gpu": "GeForce RTX 4070", "comp": 76.9, "fps_4k": 41.3, "fps_1440": 77.8, "fps_1080": 111.5, "date": "04/13/2023", "arch": "Ada Lovelace", "memory": "12GB GDDR6X", "wattage": "200W", "source": "Native 2026 (TH June 24 2026)", "type": "Desktop", "color": "#CADBB6", "comp_pct": 47.9, "fps_4k_pct": 37.3, "fps_1440_pct": 46.5, "fps_1080_pct": 54.7, "steam_pct_below": 67.7, "tier": 0}, {"gpu": "Sony PlayStation 5 Pro", "comp": 70.7, "fps_4k": 37.0, "fps_1440": 71.0, "fps_1080": 104.1, "date": "11/07/2024", "arch": "RDNA 3 / RDNA 4 RT (Custom)", "memory": "16GB GDDR6 (shared)", "wattage": "~230W", "source": "Console GPU Estimate (Digital Foundry / Gamers Nexus matched-hardware testing)", "type": "Console", "color": "#EDE7B2", "comp_pct": 44.0, "fps_4k_pct": 33.4, "fps_1440_pct": 42.4, "fps_1080_pct": 51.1, "steam_pct_below": 62.0, "tier": 1}, {"gpu": "GeForce RTX 5060 Ti 16GB", "comp": 72.9, "fps_4k": 40.2, "fps_1440": 73.4, "fps_1080": 105.2, "date": "04/16/2025", "arch": "Blackwell", "memory": "16GB GDDR7", "wattage": "180W", "source": "Native 2026 (TH June 24 2026)", "type": "Desktop", "color": "#C8E6C9", "comp_pct": 45.4, "fps_4k_pct": 36.3, "fps_1440_pct": 43.9, "fps_1080_pct": 51.6, "steam_pct_below": 63.9, "tier": 0}, {"gpu": "Radeon RX 7700 XT", "comp": 71.2, "fps_4k": 38.0, "fps_1440": 72.7, "fps_1080": 102.9, "date": "09/06/2023", "arch": "RDNA 3", "memory": "12GB GDDR6", "wattage": "245W", "source": "Native 2026 (TH June 24 2026)", "type": "Desktop", "color": "#F7D792", "comp_pct": 44.3, "fps_4k_pct": 34.3, "fps_1440_pct": 43.5, "fps_1080_pct": 50.5, "steam_pct_below": 63.5, "tier": 0}, {"gpu": "GeForce RTX 5080 Laptop", "comp": 93.2, "fps_4k": 58.1, "fps_1440": 96.2, "fps_1080": 125.2, "date": "01/30/2025", "arch": "Blackwell", "memory": "16GB GDDR7", "wattage": "150W", "source": "Laptop GPU Projection (Notebookcheck-verified ratio to same-name desktop, cross-checked vs Tom's Hardware)", "type": "Laptop", "color": "#B6D4B7", "comp_pct": 58.0, "fps_4k_pct": 52.4, "fps_1440_pct": 57.5, "fps_1080_pct": 61.4, "steam_pct_below": 78.5, "tier": 1}, {"gpu": "Radeon RX 6800", "comp": 70.1, "fps_4k": 35.9, "fps_1440": 69.2, "fps_1080": 105.2, "date": "11/18/2020", "arch": "RDNA 2", "memory": "16GB GDDR6", "wattage": "250W", "source": "Extrapolated (2022-2024 Data, Local 10-Anchor)", "type": "Desktop", "color": "#FFF3E0", "comp_pct": 43.6, "fps_4k_pct": 32.4, "fps_1440_pct": 41.4, "fps_1080_pct": 51.6, "steam_pct_below": 63.3, "tier": 1}, {"gpu": "Radeon RX 9060 XT 16GB", "comp": 66.9, "fps_4k": 35.2, "fps_1440": 67.3, "fps_1080": 98.3, "date": "06/05/2025", "arch": "RDNA 4", "memory": "16GB GDDR6", "wattage": "165W", "source": "Native 2026 (TH June 24 2026)", "type": "Desktop", "color": "#FFCDD2", "comp_pct": 41.7, "fps_4k_pct": 31.8, "fps_1440_pct": 40.2, "fps_1080_pct": 48.2, "steam_pct_below": 62.0, "tier": 0}, {"gpu": "GeForce RTX 5070 Ti Laptop", "comp": 61.3, "fps_4k": 37.0, "fps_1440": 63.1, "fps_1080": 83.9, "date": "02/20/2025", "arch": "Blackwell", "memory": "16GB GDDR7", "wattage": "150W", "source": "Laptop GPU Projection (Notebookcheck-verified ratio to same-name desktop, cross-checked vs Tom's Hardware)", "type": "Laptop", "color": "#C8E6C9", "comp_pct": 38.2, "fps_4k_pct": 33.4, "fps_1440_pct": 37.7, "fps_1080_pct": 41.2, "steam_pct_below": 60.0, "tier": 2, "detail": "Estimated as 15% above the RTX 5070 Laptop's figure in games (itself a two-step estimate) \u2014 not benchmarked directly."}, {"gpu": "GeForce RTX 3080 Ti Laptop", "comp": 62.3, "fps_4k": 36.7, "fps_1440": 64.2, "fps_1080": 86.1, "date": "01/04/2022", "arch": "Ampere", "memory": "16GB GDDR6", "wattage": "150W", "source": "Laptop GPU Projection (Notebookcheck-verified ratio to same-name desktop, cross-checked vs Tom's Hardware)", "type": "Laptop", "color": "#F1F8E9", "comp_pct": 38.8, "fps_4k_pct": 33.1, "fps_1440_pct": 38.4, "fps_1080_pct": 42.2, "steam_pct_below": 60.6, "tier": 1}, {"gpu": "Titan RTX", "comp": 62.6, "fps_4k": 32.7, "fps_1440": 64.1, "fps_1080": 91.0, "date": "12/18/2018", "arch": "Turing", "memory": "24GB GDDR6", "wattage": "280W", "source": "Extrapolated (2022-2024 Data, Local 10-Anchor)", "type": "Desktop", "color": "#E7E9D5", "comp_pct": 39.0, "fps_4k_pct": 29.5, "fps_1440_pct": 38.3, "fps_1080_pct": 44.7, "steam_pct_below": 62.0, "tier": 1}, {"gpu": "Xbox Series X", "comp": 51.6, "fps_4k": 25.4, "fps_1440": 52.5, "fps_1080": 76.8, "date": "11/10/2020", "arch": "RDNA 2 (Custom)", "memory": "16GB GDDR6 (shared)", "wattage": "~200W", "source": "Console GPU Estimate (Digital Foundry / Gamers Nexus matched-hardware testing)", "type": "Console", "color": "#EDE7B2", "comp_pct": 32.1, "fps_4k_pct": 22.9, "fps_1440_pct": 31.4, "fps_1080_pct": 37.7, "steam_pct_below": 42.9, "tier": 1}, {"gpu": "GeForce RTX 4060 Ti 16GB", "comp": 60.4, "fps_4k": 31.3, "fps_1440": 60.5, "fps_1080": 89.3, "date": "07/18/2023", "arch": "Ada Lovelace", "memory": "16GB GDDR6", "wattage": "160W", "source": "Native 2026 (TH June 24 2026)", "type": "Desktop", "color": "#DCEDC8", "comp_pct": 37.6, "fps_4k_pct": 28.2, "fps_1440_pct": 36.2, "fps_1080_pct": 43.8, "steam_pct_below": 56.2, "tier": 0}, {"gpu": "Radeon RX 9060 XT 8GB", "comp": 61.8, "fps_4k": 29.7, "fps_1440": 62.5, "fps_1080": 93.2, "date": "06/05/2025", "arch": "RDNA 4", "memory": "8GB GDDR6", "wattage": "165W", "source": "Native 2026 (TH June 24 2026)", "type": "Desktop", "color": "#EDBBC0", "comp_pct": 38.5, "fps_4k_pct": 26.8, "fps_1440_pct": 37.4, "fps_1080_pct": 45.7, "steam_pct_below": 60.6, "tier": 0}, {"gpu": "GeForce RTX 2080 Ti", "comp": 59.6, "fps_4k": 29.7, "fps_1440": 60.9, "fps_1080": 88.2, "date": "09/20/2018", "arch": "Turing", "memory": "11GB GDDR6", "wattage": "250W", "source": "Extrapolated (2022-2024 Data, Local 10-Anchor)", "type": "Desktop", "color": "#F9FBE7", "comp_pct": 37.1, "fps_4k_pct": 26.8, "fps_1440_pct": 36.4, "fps_1080_pct": 43.3, "steam_pct_below": 55.8, "tier": 1}, {"gpu": "Radeon RX 6750 XT", "comp": 56.8, "fps_4k": 29.6, "fps_1440": 57.6, "fps_1080": 83.2, "date": "05/10/2022", "arch": "RDNA 2", "memory": "12GB GDDR6", "wattage": "250W", "source": "Native 2026 (TH June 24 2026)", "type": "Desktop", "color": "#EDE1CE", "comp_pct": 35.4, "fps_4k_pct": 26.7, "fps_1440_pct": 34.4, "fps_1080_pct": 40.8, "steam_pct_below": 52.2, "tier": 0}, {"gpu": "GeForce RTX 5070 Laptop", "comp": 55.7, "fps_4k": 32.0, "fps_1440": 56.9, "fps_1080": 78.2, "date": "03/05/2025", "arch": "Blackwell", "memory": "12GB GDDR7", "wattage": "115W", "source": "Laptop GPU Projection (Notebookcheck-verified ratio to same-name desktop, cross-checked vs Tom's Hardware)", "type": "Laptop", "color": "#B6D4B7", "comp_pct": 34.7, "fps_4k_pct": 28.9, "fps_1440_pct": 34.0, "fps_1080_pct": 38.4, "steam_pct_below": 46.4, "tier": 2, "detail": "Estimated as ~8% above the RTX 4070 Laptop's own figure (which is itself one step removed, anchored to desktop RTX 3070) \u2014 not benchmarked directly."}, {"gpu": "GeForce RTX 3080 Laptop", "comp": 55.4, "fps_4k": 30.7, "fps_1440": 57.4, "fps_1080": 78.1, "date": "01/12/2021", "arch": "Ampere", "memory": "8-16GB GDDR6", "wattage": "150W", "source": "Laptop GPU Projection (Notebookcheck-verified ratio to same-name desktop, cross-checked vs Tom's Hardware)", "type": "Laptop", "color": "#DFE6D7", "comp_pct": 34.5, "fps_4k_pct": 27.7, "fps_1440_pct": 34.3, "fps_1080_pct": 38.3, "steam_pct_below": 46.4, "tier": 1}, {"gpu": "GeForce RTX 5060 Ti 8GB", "comp": 65.7, "fps_4k": 28.1, "fps_1440": 68.6, "fps_1080": 100.4, "date": "04/16/2025", "arch": "Blackwell", "memory": "8GB GDDR7", "wattage": "180W", "source": "Native 2026 (TH June 24 2026)", "type": "Desktop", "color": "#C8E6C9", "comp_pct": 40.9, "fps_4k_pct": 25.4, "fps_1440_pct": 41.0, "fps_1080_pct": 49.3, "steam_pct_below": 62.0, "tier": 0}, {"gpu": "Radeon RX 6700 XT", "comp": 53.8, "fps_4k": 28.0, "fps_1440": 54.3, "fps_1080": 79.2, "date": "03/18/2021", "arch": "RDNA 2", "memory": "12GB GDDR6", "wattage": "230W", "source": "Native 2026 (TH June 24 2026)", "type": "Desktop", "color": "#FFF3E0", "comp_pct": 33.5, "fps_4k_pct": 25.3, "fps_1440_pct": 32.5, "fps_1080_pct": 38.9, "steam_pct_below": 43.7, "tier": 0}, {"gpu": "Intel Arc B580", "comp": 49.9, "fps_4k": 27.6, "fps_1440": 50.7, "fps_1080": 71.5, "date": "12/13/2024", "arch": "Battlemage (Xe2-HPG)", "memory": "12GB GDDR6", "wattage": "190W", "source": "Native 2026 (TH June 24 2026)", "type": "Desktop", "color": "#A9CCE9", "comp_pct": 31.1, "fps_4k_pct": 24.9, "fps_1440_pct": 30.3, "fps_1080_pct": 35.1, "steam_pct_below": 43.3, "tier": 0}, {"gpu": "GeForce RTX 4060 Ti", "comp": 60.0, "fps_4k": 27.1, "fps_1440": 60.9, "fps_1080": 92.0, "date": "05/24/2023", "arch": "Ada Lovelace", "memory": "8GB GDDR6", "wattage": "160W", "source": "Extrapolated (2022-2024 Data, Local 10-Anchor)", "type": "Desktop", "color": "#CADBB6", "comp_pct": 37.4, "fps_4k_pct": 24.5, "fps_1440_pct": 36.4, "fps_1080_pct": 45.1, "steam_pct_below": 56.2, "tier": 1}, {"gpu": "GeForce RTX 3070", "comp": 57.2, "fps_4k": 26.2, "fps_1440": 58.2, "fps_1080": 87.2, "date": "10/29/2020", "arch": "Ampere", "memory": "8GB GDDR6", "wattage": "220W", "source": "Native 2026 (TH June 24 2026)", "type": "Desktop", "color": "#F1F8E9", "comp_pct": 35.6, "fps_4k_pct": 23.6, "fps_1440_pct": 34.8, "fps_1080_pct": 42.8, "steam_pct_below": 52.6, "tier": 0}, {"gpu": "GeForce RTX 3070 Ti", "comp": 62.5, "fps_4k": 26.0, "fps_1440": 66.9, "fps_1080": 94.6, "date": "06/10/2021", "arch": "Ampere", "memory": "8GB GDDR6X", "wattage": "290W", "source": "Native 2026 (TH June 24 2026)", "type": "Desktop", "color": "#DFE6D7", "comp_pct": 38.9, "fps_4k_pct": 23.5, "fps_1440_pct": 40.0, "fps_1080_pct": 46.4, "steam_pct_below": 60.6, "tier": 0}, {"gpu": "Radeon RX 7600 XT", "comp": 59.3, "fps_4k": 25.5, "fps_1440": 50.2, "fps_1080": 102.1, "date": "01/24/2024", "arch": "RDNA 3", "memory": "16GB GDDR6", "wattage": "190W", "source": "Native 2026 (TH June 24 2026)", "type": "Desktop", "color": "#FFE0B2", "comp_pct": 36.9, "fps_4k_pct": 23.0, "fps_1440_pct": 30.0, "fps_1080_pct": 50.1, "steam_pct_below": 55.8, "tier": 0}, {"gpu": "Titan V", "comp": 50.5, "fps_4k": 25.3, "fps_1440": 50.7, "fps_1080": 75.5, "date": "12/07/2017", "arch": "Volta", "memory": "12GB HBM2", "wattage": "250W", "source": "Extrapolated (2020-2021 Score, Local 10-Anchor)", "type": "Desktop", "color": "#E1D3E3", "comp_pct": 31.4, "fps_4k_pct": 22.8, "fps_1440_pct": 30.3, "fps_1080_pct": 37.0, "steam_pct_below": 43.3, "tier": 2}, {"gpu": "GeForce RTX 4070 Laptop", "comp": 55.3, "fps_4k": 29.7, "fps_1440": 56.0, "fps_1080": 80.3, "date": "02/08/2023", "arch": "Ada Lovelace", "memory": "8GB GDDR6", "wattage": "115W", "source": "Laptop GPU Projection (Notebookcheck-verified ratio to same-name desktop, cross-checked vs Tom's Hardware)", "type": "Laptop", "color": "#DCEDC8", "comp_pct": 34.4, "fps_4k_pct": 26.8, "fps_1440_pct": 33.5, "fps_1080_pct": 39.4, "steam_pct_below": 44.9, "tier": 1}, {"gpu": "GeForce RTX 2080 Super", "comp": 51.8, "fps_4k": 25.1, "fps_1440": 52.9, "fps_1080": 77.5, "date": "07/23/2019", "arch": "Turing", "memory": "8GB GDDR6", "wattage": "250W", "source": "Extrapolated (2022-2024 Data, Local 10-Anchor)", "type": "Desktop", "color": "#E7E9D5", "comp_pct": 32.3, "fps_4k_pct": 22.7, "fps_1440_pct": 31.6, "fps_1080_pct": 38.0, "steam_pct_below": 43.3, "tier": 1}, {"gpu": "Sony PlayStation 5", "comp": 47.1, "fps_4k": 21.8, "fps_1440": 46.9, "fps_1080": 72.7, "date": "11/12/2020", "arch": "RDNA 2 (Custom)", "memory": "16GB GDDR6 (shared)", "wattage": "~200W", "source": "Console GPU Estimate (Digital Foundry / Gamers Nexus matched-hardware testing)", "type": "Console", "color": "#FFF9C4", "comp_pct": 29.3, "fps_4k_pct": 19.7, "fps_1440_pct": 28.0, "fps_1080_pct": 35.7, "steam_pct_below": 29.1, "tier": 1}, {"gpu": "GeForce RTX 4060 Ti 8GB", "comp": 56.9, "fps_4k": 23.9, "fps_1440": 58.9, "fps_1080": 88.0, "date": "05/24/2023", "arch": "Ada Lovelace", "memory": "8GB GDDR6", "wattage": "160W", "source": "Native 2026 (TH June 24 2026)", "type": "Desktop", "color": "#CADBB6", "comp_pct": 35.4, "fps_4k_pct": 21.6, "fps_1440_pct": 35.2, "fps_1080_pct": 43.2, "steam_pct_below": 52.6, "tier": 0}, {"gpu": "Radeon RX 6700 10GB", "comp": 48.6, "fps_4k": 23.3, "fps_1440": 47.0, "fps_1080": 75.5, "date": "07/28/2022", "arch": "RDNA 2", "memory": "10GB GDDR6", "wattage": "175W", "source": "Extrapolated (2022-2024 Data, Local 10-Anchor)", "type": "Desktop", "color": "#EDE1CE", "comp_pct": 30.3, "fps_4k_pct": 21.0, "fps_1440_pct": 28.1, "fps_1080_pct": 37.0, "steam_pct_below": 42.9, "tier": 1}, {"gpu": "Intel Arc A770 16GB", "comp": 44.7, "fps_4k": 23.3, "fps_1440": 44.1, "fps_1080": 66.6, "date": "10/12/2022", "arch": "Alchemist (Xe-HPG)", "memory": "16GB GDDR6", "wattage": "225W", "source": "Extrapolated (2022-2024 Data, Local 10-Anchor)", "type": "Desktop", "color": "#D1E0EB", "comp_pct": 27.8, "fps_4k_pct": 21.0, "fps_1440_pct": 26.4, "fps_1080_pct": 32.7, "steam_pct_below": 30.2, "tier": 1}, {"gpu": "Radeon VII", "comp": 41.0, "fps_4k": 22.3, "fps_1440": 39.6, "fps_1080": 61.0, "date": "02/07/2019", "arch": "Vega (GCN 5)", "memory": "16GB HBM2", "wattage": "300W", "source": "Extrapolated (2022-2024 Data, Local 10-Anchor)", "type": "Desktop", "color": "#E9D7D5", "comp_pct": 25.5, "fps_4k_pct": 20.1, "fps_1440_pct": 23.7, "fps_1080_pct": 29.9, "steam_pct_below": 16.4, "tier": 1}, {"gpu": "GeForce RTX 3060 12GB", "comp": 41.9, "fps_4k": 22.2, "fps_1440": 41.9, "fps_1080": 61.5, "date": "02/25/2021", "arch": "Ampere", "memory": "12GB GDDR6", "wattage": "170W", "source": "Native 2026 (TH June 24 2026)", "type": "Desktop", "color": "#F1F8E9", "comp_pct": 26.1, "fps_4k_pct": 20.0, "fps_1440_pct": 25.0, "fps_1080_pct": 30.2, "steam_pct_below": 22.2, "tier": 0}, {"gpu": "Titan Xp", "comp": 44.0, "fps_4k": 22.1, "fps_1440": 42.7, "fps_1080": 67.1, "date": "04/06/2017", "arch": "Pascal", "memory": "12GB GDDR5X", "wattage": "250W", "source": "Extrapolated (2020-2021 Score, Local 10-Anchor)", "type": "Desktop", "color": "#EDEBD5", "comp_pct": 27.4, "fps_4k_pct": 19.9, "fps_1440_pct": 25.5, "fps_1080_pct": 32.9, "steam_pct_below": 29.4, "tier": 2}, {"gpu": "Intel Arc A770 8GB", "comp": 43.2, "fps_4k": 21.9, "fps_1440": 42.6, "fps_1080": 65.0, "date": "10/12/2022", "arch": "Alchemist (Xe-HPG)", "memory": "8GB GDDR6", "wattage": "225W", "source": "Extrapolated (2022-2024 Data, Local 10-Anchor)", "type": "Desktop", "color": "#E3F2FD", "comp_pct": 26.9, "fps_4k_pct": 19.8, "fps_1440_pct": 25.5, "fps_1080_pct": 31.9, "steam_pct_below": 28.4, "tier": 1}, {"gpu": "GeForce RTX 5060", "comp": 56.7, "fps_4k": 21.8, "fps_1440": 59.8, "fps_1080": 88.5, "date": "05/19/2025", "arch": "Blackwell", "memory": "8GB GDDR7", "wattage": "150W", "source": "Native 2026 (TH June 24 2026)", "type": "Desktop", "color": "#B6D4B7", "comp_pct": 35.3, "fps_4k_pct": 19.7, "fps_1440_pct": 35.7, "fps_1080_pct": 43.4, "steam_pct_below": 47.3, "tier": 0}, {"gpu": "Radeon RX 5700 XT", "comp": 41.6, "fps_4k": 20.8, "fps_1440": 39.7, "fps_1080": 64.3, "date": "07/07/2019", "arch": "RDNA 1", "memory": "8GB GDDR6", "wattage": "225W", "source": "Extrapolated (2022-2024 Data, Local 10-Anchor)", "type": "Desktop", "color": "#EDE6DE", "comp_pct": 25.9, "fps_4k_pct": 18.8, "fps_1440_pct": 23.7, "fps_1080_pct": 31.6, "steam_pct_below": 22.2, "tier": 1}, {"gpu": "Intel Arc A750", "comp": 40.5, "fps_4k": 20.5, "fps_1440": 39.8, "fps_1080": 61.1, "date": "10/12/2022", "arch": "Alchemist (Xe-HPG)", "memory": "8GB GDDR6", "wattage": "225W", "source": "Extrapolated (2022-2024 Data, Local 10-Anchor)", "type": "Desktop", "color": "#D1E0EB", "comp_pct": 25.2, "fps_4k_pct": 18.5, "fps_1440_pct": 23.8, "fps_1080_pct": 30.0, "steam_pct_below": 16.4, "tier": 1}, {"gpu": "GeForce GTX 1080 Ti", "comp": 40.1, "fps_4k": 20.2, "fps_1440": 40.2, "fps_1080": 59.8, "date": "03/10/2017", "arch": "Pascal", "memory": "11GB GDDR5X", "wattage": "250W", "source": "Extrapolated (2022-2024 Data, Local 10-Anchor)", "type": "Desktop", "color": "#FFFDE7", "comp_pct": 25.0, "fps_4k_pct": 18.2, "fps_1440_pct": 24.0, "fps_1080_pct": 29.3, "steam_pct_below": 15.5, "tier": 1}, {"gpu": "Intel Arc B570", "comp": 42.5, "fps_4k": 19.6, "fps_1440": 44.3, "fps_1080": 63.5, "date": "01/16/2025", "arch": "Battlemage (Xe2-HPG)", "memory": "10GB GDDR6", "wattage": "150W", "source": "Native 2026 (TH June 24 2026)", "type": "Desktop", "color": "#BBDEFB", "comp_pct": 26.5, "fps_4k_pct": 17.7, "fps_1440_pct": 26.5, "fps_1080_pct": 31.2, "steam_pct_below": 28.4, "tier": 0}, {"gpu": "GeForce RTX 3060 Ti", "comp": 48.2, "fps_4k": 19.4, "fps_1440": 51.0, "fps_1080": 74.2, "date": "12/02/2020", "arch": "Ampere", "memory": "8GB GDDR6", "wattage": "200W", "source": "Native 2026 (TH June 24 2026)", "type": "Desktop", "color": "#DFE6D7", "comp_pct": 30.0, "fps_4k_pct": 17.5, "fps_1440_pct": 30.5, "fps_1080_pct": 36.4, "steam_pct_below": 39.5, "tier": 0}, {"gpu": "Radeon RX 6650 XT", "comp": 40.4, "fps_4k": 19.0, "fps_1440": 38.0, "fps_1080": 64.3, "date": "05/10/2022", "arch": "RDNA 2", "memory": "8GB GDDR6", "wattage": "180W", "source": "Native 2026 (TH June 24 2026)", "type": "Desktop", "color": "#FFF3E0", "comp_pct": 25.2, "fps_4k_pct": 17.1, "fps_1440_pct": 22.7, "fps_1080_pct": 31.6, "steam_pct_below": 16.0, "tier": 0}, {"gpu": "Intel Arc A580", "comp": 36.9, "fps_4k": 18.4, "fps_1440": 36.1, "fps_1080": 56.2, "date": "11/04/2022", "arch": "Alchemist (Xe-HPG)", "memory": "8GB GDDR6", "wattage": "185W", "source": "Extrapolated (2022-2024 Data, Local 10-Anchor)", "type": "Desktop", "color": "#E3F2FD", "comp_pct": 23.0, "fps_4k_pct": 16.6, "fps_1440_pct": 21.6, "fps_1080_pct": 27.6, "steam_pct_below": 15.5, "tier": 1}, {"gpu": "Radeon RX 7600", "comp": 44.6, "fps_4k": 18.4, "fps_1440": 45.4, "fps_1080": 69.9, "date": "05/24/2023", "arch": "RDNA 3", "memory": "8GB GDDR6", "wattage": "165W", "source": "Native 2026 (TH June 24 2026)", "type": "Desktop", "color": "#F7D792", "comp_pct": 27.8, "fps_4k_pct": 16.6, "fps_1440_pct": 27.1, "fps_1080_pct": 34.3, "steam_pct_below": 29.4, "tier": 0}, {"gpu": "GeForce RTX 3070 Laptop", "comp": 43.5, "fps_4k": 19.9, "fps_1440": 44.2, "fps_1080": 66.3, "date": "01/12/2021", "arch": "Ampere", "memory": "8GB GDDR6", "wattage": "125W", "source": "Laptop GPU Projection (Notebookcheck-verified ratio to same-name desktop, cross-checked vs Tom's Hardware)", "type": "Laptop", "color": "#F1F8E9", "comp_pct": 27.1, "fps_4k_pct": 18.0, "fps_1440_pct": 26.4, "fps_1080_pct": 32.5, "steam_pct_below": 28.4, "tier": 1}, {"gpu": "GeForce RTX 4060", "comp": 45.5, "fps_4k": 17.4, "fps_1440": 47.6, "fps_1080": 71.5, "date": "06/29/2023", "arch": "Ada Lovelace", "memory": "8GB GDDR6", "wattage": "115W", "source": "Native 2026 (TH June 24 2026)", "type": "Desktop", "color": "#DCEDC8", "comp_pct": 28.3, "fps_4k_pct": 15.7, "fps_1440_pct": 28.5, "fps_1080_pct": 35.1, "steam_pct_below": 30.2, "tier": 0}, {"gpu": "Radeon RX 6600 XT", "comp": 40.2, "fps_4k": 17.3, "fps_1440": 40.7, "fps_1080": 62.7, "date": "08/11/2021", "arch": "RDNA 2", "memory": "8GB GDDR6", "wattage": "160W", "source": "Native 2026 (TH June 24 2026)", "type": "Desktop", "color": "#EDE1CE", "comp_pct": 25.0, "fps_4k_pct": 15.6, "fps_1440_pct": 24.3, "fps_1080_pct": 30.8, "steam_pct_below": 15.5, "tier": 0}, {"gpu": "GeForce RTX 3070 Ti Laptop", "comp": 55.0, "fps_4k": 22.9, "fps_1440": 58.9, "fps_1080": 83.2, "date": "01/04/2022", "arch": "Ampere", "memory": "8GB GDDR6", "wattage": "125W", "source": "Laptop GPU Projection (Notebookcheck-verified ratio to same-name desktop, cross-checked vs Tom's Hardware)", "type": "Laptop", "color": "#DFE6D7", "comp_pct": 34.2, "fps_4k_pct": 20.7, "fps_1440_pct": 35.2, "fps_1080_pct": 40.8, "steam_pct_below": 44.6, "tier": 1}, {"gpu": "GeForce RTX 5050", "comp": 43.8, "fps_4k": 17.0, "fps_1440": 45.2, "fps_1080": 69.3, "date": "05/19/2025", "arch": "Blackwell", "memory": "8GB GDDR7", "wattage": "130W", "source": "Native 2026 (TH June 24 2026)", "type": "Desktop", "color": "#C8E6C9", "comp_pct": 27.3, "fps_4k_pct": 15.3, "fps_1440_pct": 27.0, "fps_1080_pct": 34.0, "steam_pct_below": 29.1, "tier": 0}, {"gpu": "Radeon RX Vega 64", "comp": 32.5, "fps_4k": 16.6, "fps_1440": 31.1, "fps_1080": 49.7, "date": "08/14/2017", "arch": "Vega (GCN 5)", "memory": "8GB HBM2", "wattage": "295W", "source": "Extrapolated (2022-2024 Data, Local 10-Anchor)", "type": "Desktop", "color": "#FBE9E7", "comp_pct": 20.2, "fps_4k_pct": 15.0, "fps_1440_pct": 18.6, "fps_1080_pct": 24.4, "steam_pct_below": 12.8, "tier": 1}, {"gpu": "Steam Machine", "comp": 35.2, "fps_4k": 15.5, "fps_1440": 32.8, "fps_1080": 57.4, "date": "06/29/2026", "arch": "RDNA 3 (Custom, 28 CU)", "memory": "8GB GDDR6", "wattage": "110W", "source": "Console GPU Estimate (Digital Foundry / Gamers Nexus matched-hardware testing)", "type": "Console", "color": "#EDE7B2", "comp_pct": 21.9, "fps_4k_pct": 14.0, "fps_1440_pct": 19.6, "fps_1080_pct": 28.2, "steam_pct_below": 15.5, "tier": 1}, {"gpu": "Radeon RX 6600", "comp": 30.4, "fps_4k": 14.5, "fps_1440": 24.8, "fps_1080": 51.9, "date": "10/13/2021", "arch": "RDNA 2", "memory": "8GB GDDR6", "wattage": "132W", "source": "Native 2026 (TH June 24 2026)", "type": "Desktop", "color": "#FFF3E0", "comp_pct": 18.9, "fps_4k_pct": 13.1, "fps_1440_pct": 14.8, "fps_1080_pct": 25.5, "steam_pct_below": 8.6, "tier": 0}, {"gpu": "GTX Titan X (Maxwell)", "comp": 24.2, "fps_4k": 12.8, "fps_1440": 23.2, "fps_1080": 36.7, "date": "03/17/2015", "arch": "Maxwell", "memory": "12GB GDDR5", "wattage": "250", "source": "Extrapolated (2020-2021 Score, Local 10-Anchor)", "type": "Desktop", "color": "#EDE6CF", "comp_pct": 15.1, "fps_4k_pct": 11.6, "fps_1440_pct": 13.9, "fps_1080_pct": 18.0, "steam_pct_below": 3.5, "tier": 2}, {"gpu": "GeForce RTX 3050", "comp": 29.0, "fps_4k": 12.6, "fps_1440": 29.8, "fps_1080": 44.6, "date": "01/27/2022", "arch": "Ampere", "memory": "8GB GDDR6", "wattage": "130W", "source": "Native 2026 (TH June 24 2026)", "type": "Desktop", "color": "#F1F8E9", "comp_pct": 18.1, "fps_4k_pct": 11.4, "fps_1440_pct": 17.8, "fps_1080_pct": 21.9, "steam_pct_below": 3.5, "tier": 0}, {"gpu": "GeForce RTX 5060 Laptop", "comp": 47.1, "fps_4k": 18.1, "fps_1440": 49.6, "fps_1080": 73.5, "date": "05/19/2025", "arch": "Blackwell", "memory": "8GB GDDR7", "wattage": "80W", "source": "Laptop GPU Projection (Notebookcheck-verified ratio to same-name desktop, cross-checked vs Tom's Hardware)", "type": "Laptop", "color": "#B6D4B7", "comp_pct": 29.3, "fps_4k_pct": 16.3, "fps_1440_pct": 29.6, "fps_1080_pct": 36.1, "steam_pct_below": 36.0, "tier": 2, "detail": "Estimated as slightly ahead of the RTX 4070 Laptop's figure (itself one step removed, anchored to desktop RTX 3070) \u2014 not benchmarked directly."}, {"gpu": "GeForce RTX 4060 Laptop", "comp": 41.0, "fps_4k": 15.7, "fps_1440": 42.8, "fps_1080": 64.4, "date": "02/08/2023", "arch": "Ada Lovelace", "memory": "8GB GDDR6", "wattage": "115W", "source": "Laptop GPU Projection (Notebookcheck-verified ratio to same-name desktop, cross-checked vs Tom's Hardware)", "type": "Laptop", "color": "#CADBB6", "comp_pct": 25.5, "fps_4k_pct": 14.2, "fps_1440_pct": 25.6, "fps_1080_pct": 31.6, "steam_pct_below": 16.4, "tier": 2, "detail": "Interpolated between the RTX 3070 Laptop and RTX 3070 Ti Laptop estimates (both one step removed from their own desktop anchors) \u2014 not benchmarked directly."}, {"gpu": "GTX 1650 GDDR6", "comp": 15.7, "fps_4k": 8.6, "fps_1440": 14.6, "fps_1080": 23.9, "date": "06/01/2020", "arch": "Turing", "memory": "4GB GDDR6", "wattage": "75W", "source": "Extrapolated (2020-2021 Score, Local 10-Anchor)", "type": "Desktop", "color": "#F9FBE7", "comp_pct": 9.8, "fps_4k_pct": 7.8, "fps_1440_pct": 8.7, "fps_1080_pct": 11.7, "steam_pct_below": 3.2, "tier": 2}, {"gpu": "Vega 8 (R7 5700G)", "comp": 6.3, "fps_4k": 3.4, "fps_1440": 5.8, "fps_1080": 9.6, "date": "08/05/2021", "arch": "RDNA 2", "memory": "Shared", "wattage": "\u2014", "source": "Extrapolated (2020-2021 Score, Local 10-Anchor)", "type": "Desktop", "color": "#EDE1CE", "comp_pct": 3.9, "fps_4k_pct": 3.1, "fps_1440_pct": 3.5, "fps_1080_pct": 4.7, "steam_pct_below": 0.4, "tier": 2}, {"gpu": "Vega 7 (R5 5600G)", "comp": 5.8, "fps_4k": 3.2, "fps_1440": 5.4, "fps_1080": 8.9, "date": "04/13/2021", "arch": "RDNA 2", "memory": "Shared", "wattage": "\u2014", "source": "Extrapolated (2020-2021 Score, Local 10-Anchor)", "type": "Desktop", "color": "#FFF3E0", "comp_pct": 3.6, "fps_4k_pct": 2.9, "fps_1440_pct": 3.2, "fps_1080_pct": 4.4, "steam_pct_below": 0.4, "tier": 2}, {"gpu": "Radeon RX 550", "comp": 5.3, "fps_4k": 2.9, "fps_1440": 4.9, "fps_1080": 8.1, "date": "04/20/2017", "arch": "Polaris", "memory": "4GB GDDR5", "wattage": "50W", "source": "Extrapolated (2020-2021 Score, Local 10-Anchor)", "type": "Desktop", "color": "#EDD9DC", "comp_pct": 3.3, "fps_4k_pct": 2.6, "fps_1440_pct": 2.9, "fps_1080_pct": 4.0, "steam_pct_below": 0.0, "tier": 2}, {"gpu": "Steam Deck", "comp": 9.3, "fps_4k": 5.0, "fps_1440": 8.4, "fps_1080": 14.4, "date": "02/25/2022", "arch": "RDNA 2 (APU)", "memory": "16GB LPDDR5 (shared)", "wattage": "4-15W", "source": "Console GPU Estimate (Digital Foundry / Gamers Nexus matched-hardware testing)", "type": "Console", "color": "#EDE7B2", "comp_pct": 5.8, "fps_4k_pct": 4.5, "fps_1440_pct": 5.0, "fps_1080_pct": 7.1, "steam_pct_below": 1.3, "tier": 1}, {"gpu": "Vega 11 (R5 3400G)", "comp": 3.6, "fps_4k": 2.0, "fps_1440": 3.4, "fps_1080": 5.5, "date": "07/07/2019", "arch": "Vega (GCN 5)", "memory": "Shared", "wattage": "\u2014", "source": "Extrapolated (2020-2021 Score, Local 10-Anchor)", "type": "Desktop", "color": "#E9D7D5", "comp_pct": 2.2, "fps_4k_pct": 1.8, "fps_1440_pct": 2.0, "fps_1080_pct": 2.7, "steam_pct_below": 0.0, "tier": 2}, {"gpu": "Vega 8 (R3 3200G)", "comp": 3.2, "fps_4k": 1.8, "fps_1440": 3.0, "fps_1080": 4.9, "date": "07/07/2019", "arch": "Vega (GCN 5)", "memory": "Shared", "wattage": "\u2014", "source": "Extrapolated (2020-2021 Score, Local 10-Anchor)", "type": "Desktop", "color": "#FBE9E7", "comp_pct": 2.0, "fps_4k_pct": 1.6, "fps_1440_pct": 1.8, "fps_1080_pct": 2.4, "steam_pct_below": 0.0, "tier": 2}, {"gpu": "Iris Xe DG1", "comp": 2.9, "fps_4k": 1.6, "fps_1440": 2.7, "fps_1080": 4.4, "date": "11/02/2020", "arch": "Xe-LP", "memory": "4GB LPDDR4X", "wattage": "30W", "source": "Extrapolated (2020-2021 Score, Local 10-Anchor)", "type": "Desktop", "color": "#D6E3ED", "comp_pct": 1.8, "fps_4k_pct": 1.4, "fps_1440_pct": 1.6, "fps_1080_pct": 2.2, "steam_pct_below": 0.0, "tier": 2}, {"gpu": "Iris Plus (i7-1065G7)", "comp": 2.0, "fps_4k": 1.1, "fps_1440": 1.8, "fps_1080": 3.0, "date": "08/01/2019", "arch": "Gen 11 (Xe-LP)", "memory": "Shared", "wattage": "\u2014", "source": "Extrapolated (2020-2021 Score, Local 10-Anchor)", "type": "Desktop", "color": "#D6E3ED", "comp_pct": 1.2, "fps_4k_pct": 1.0, "fps_1440_pct": 1.1, "fps_1080_pct": 1.5, "steam_pct_below": 0.0, "tier": 2}, {"gpu": "UHD Graphics 630 (i7-10700K)", "comp": 1.2, "fps_4k": 0.7, "fps_1440": 1.1, "fps_1080": 1.8, "date": "04/30/2020", "arch": "Gen 9.5", "memory": "2x8GB DDR4-3200", "wattage": "\u2014", "source": "Extrapolated (2020-2021 Score, Local 10-Anchor)", "type": "Desktop", "color": "#E3E3E3", "comp_pct": 0.7, "fps_4k_pct": 0.6, "fps_1440_pct": 0.7, "fps_1080_pct": 0.9, "steam_pct_below": 0.0, "tier": 2}, {"gpu": "GeForce GT 1030", "comp": 4.0, "fps_4k": 2.2, "fps_1440": 3.7, "fps_1080": 6.0, "date": "05/17/2017", "arch": "Pascal", "memory": "2GB GDDR5", "wattage": "30W", "source": "Extrapolated (2022-2024 Data, Local 10-Anchor)", "type": "Desktop", "color": "#EDEBD5", "comp_pct": 2.5, "fps_4k_pct": 2.0, "fps_1440_pct": 2.2, "fps_1080_pct": 2.9, "steam_pct_below": 0.0, "tier": 1}, {"gpu": "GeForce GTX 1050", "comp": 7.0, "fps_4k": 3.7, "fps_1440": 6.5, "fps_1080": 10.9, "date": "10/25/2016", "arch": "Pascal", "memory": "2GB GDDR5", "wattage": "75W", "source": "Extrapolated (2022-2024 Data, Local 10-Anchor)", "type": "Desktop", "color": "#FFFDE7", "comp_pct": 4.4, "fps_4k_pct": 3.3, "fps_1440_pct": 3.9, "fps_1080_pct": 5.3, "steam_pct_below": 0.4, "tier": 1}, {"gpu": "GeForce GTX 1050 Ti", "comp": 11.4, "fps_4k": 6.2, "fps_1440": 10.3, "fps_1080": 17.8, "date": "10/25/2016", "arch": "Pascal", "memory": "4GB GDDR5", "wattage": "75W", "source": "Extrapolated (2022-2024 Data, Local 10-Anchor)", "type": "Desktop", "color": "#EDEBD5", "comp_pct": 7.1, "fps_4k_pct": 5.6, "fps_1440_pct": 6.2, "fps_1080_pct": 8.7, "steam_pct_below": 1.3, "tier": 1}, {"gpu": "GeForce GTX 1060 3GB", "comp": 13.1, "fps_4k": 7.2, "fps_1440": 12.0, "fps_1080": 20.0, "date": "08/18/2016", "arch": "Pascal", "memory": "3GB GDDR5", "wattage": "120W", "source": "Extrapolated (2022-2024 Data, Local 10-Anchor)", "type": "Desktop", "color": "#FFFDE7", "comp_pct": 8.2, "fps_4k_pct": 6.5, "fps_1440_pct": 7.2, "fps_1080_pct": 9.8, "steam_pct_below": 3.2, "tier": 1}, {"gpu": "GeForce GTX 1060 6GB", "comp": 19.0, "fps_4k": 9.8, "fps_1440": 18.4, "fps_1080": 28.9, "date": "07/19/2016", "arch": "Pascal", "memory": "6GB GDDR5", "wattage": "120W", "source": "Extrapolated (2022-2024 Data, Local 10-Anchor)", "type": "Desktop", "color": "#EDEBD5", "comp_pct": 11.8, "fps_4k_pct": 8.8, "fps_1440_pct": 11.0, "fps_1080_pct": 14.2, "steam_pct_below": 3.5, "tier": 1}, {"gpu": "GeForce GTX 1070", "comp": 26.3, "fps_4k": 12.1, "fps_1440": 26.5, "fps_1080": 40.3, "date": "06/10/2016", "arch": "Pascal", "memory": "8GB GDDR5", "wattage": "150W", "source": "Extrapolated (2022-2024 Data, Local 10-Anchor)", "type": "Desktop", "color": "#FFFDE7", "comp_pct": 16.4, "fps_4k_pct": 10.9, "fps_1440_pct": 15.8, "fps_1080_pct": 19.8, "steam_pct_below": 3.5, "tier": 1}, {"gpu": "GeForce GTX 1070 Ti", "comp": 30.1, "fps_4k": 13.8, "fps_1440": 30.3, "fps_1080": 46.1, "date": "11/02/2017", "arch": "Pascal", "memory": "8GB GDDR5", "wattage": "180W", "source": "Extrapolated (2022-2024 Data, Local 10-Anchor)", "type": "Desktop", "color": "#EDEBD5", "comp_pct": 18.7, "fps_4k_pct": 12.5, "fps_1440_pct": 18.1, "fps_1080_pct": 22.6, "steam_pct_below": 8.6, "tier": 1}, {"gpu": "GeForce GTX 1080", "comp": 31.2, "fps_4k": 14.4, "fps_1440": 31.5, "fps_1080": 47.8, "date": "05/27/2016", "arch": "Pascal", "memory": "8GB GDDR5X", "wattage": "180W", "source": "Extrapolated (2022-2024 Data, Local 10-Anchor)", "type": "Desktop", "color": "#FFFDE7", "comp_pct": 19.4, "fps_4k_pct": 13.0, "fps_1440_pct": 18.8, "fps_1080_pct": 23.5, "steam_pct_below": 9.9, "tier": 1}, {"gpu": "GeForce GTX 1630", "comp": 9.8, "fps_4k": 5.3, "fps_1440": 9.0, "fps_1080": 15.2, "date": "\u2014", "arch": "\u2014", "memory": "4GB GDDR6", "wattage": "75W", "source": "Extrapolated (2022-2024 Data, Local 10-Anchor)", "type": "Desktop", "color": "#E3E3E3", "comp_pct": 6.1, "fps_4k_pct": 4.8, "fps_1440_pct": 5.4, "fps_1080_pct": 7.5, "steam_pct_below": 1.3, "tier": 1}, {"gpu": "GeForce GTX 1650", "comp": 15.6, "fps_4k": 8.4, "fps_1440": 14.2, "fps_1080": 24.3, "date": "04/23/2019", "arch": "Turing", "memory": "4GB GDDR5", "wattage": "75W", "source": "Extrapolated (2022-2024 Data, Local 10-Anchor)", "type": "Desktop", "color": "#E7E9D5", "comp_pct": 9.7, "fps_4k_pct": 7.6, "fps_1440_pct": 8.5, "fps_1080_pct": 11.9, "steam_pct_below": 3.2, "tier": 1}, {"gpu": "GeForce GTX 1650 GDDR6", "comp": 16.6, "fps_4k": 8.7, "fps_1440": 15.2, "fps_1080": 26.0, "date": "\u2014", "arch": "\u2014", "memory": "4GB GDDR6", "wattage": "75W", "source": "Extrapolated (2022-2024 Data, Local 10-Anchor)", "type": "Desktop", "color": "#F5F5F5", "comp_pct": 10.3, "fps_4k_pct": 7.9, "fps_1440_pct": 9.1, "fps_1080_pct": 12.8, "steam_pct_below": 3.5, "tier": 1}, {"gpu": "GeForce GTX 1650 Super", "comp": 19.1, "fps_4k": 9.6, "fps_1440": 17.0, "fps_1080": 30.6, "date": "11/22/2019", "arch": "Turing", "memory": "4GB GDDR6", "wattage": "100W", "source": "Extrapolated (2022-2024 Data, Local 10-Anchor)", "type": "Desktop", "color": "#F9FBE7", "comp_pct": 11.9, "fps_4k_pct": 8.7, "fps_1440_pct": 10.2, "fps_1080_pct": 15.0, "steam_pct_below": 3.5, "tier": 1}, {"gpu": "GeForce GTX 1660", "comp": 24.7, "fps_4k": 11.5, "fps_1440": 24.3, "fps_1080": 38.4, "date": "03/14/2019", "arch": "Turing", "memory": "6GB GDDR5", "wattage": "120W", "source": "Extrapolated (2022-2024 Data, Local 10-Anchor)", "type": "Desktop", "color": "#E7E9D5", "comp_pct": 15.4, "fps_4k_pct": 10.4, "fps_1440_pct": 14.5, "fps_1080_pct": 18.8, "steam_pct_below": 3.5, "tier": 1}, {"gpu": "GeForce GTX 1660 Super", "comp": 27.1, "fps_4k": 12.4, "fps_1440": 26.7, "fps_1080": 42.2, "date": "10/29/2019", "arch": "Turing", "memory": "6GB GDDR6", "wattage": "125W", "source": "Extrapolated (2022-2024 Data, Local 10-Anchor)", "type": "Desktop", "color": "#F9FBE7", "comp_pct": 16.9, "fps_4k_pct": 11.2, "fps_1440_pct": 16.0, "fps_1080_pct": 20.7, "steam_pct_below": 3.5, "tier": 1}, {"gpu": "GeForce GTX 1660 Ti", "comp": 27.0, "fps_4k": 12.4, "fps_1440": 26.7, "fps_1080": 42.0, "date": "02/22/2019", "arch": "Turing", "memory": "6GB GDDR6", "wattage": "120W", "source": "Extrapolated (2022-2024 Data, Local 10-Anchor)", "type": "Desktop", "color": "#E7E9D5", "comp_pct": 16.8, "fps_4k_pct": 11.2, "fps_1440_pct": 16.0, "fps_1080_pct": 20.6, "steam_pct_below": 3.5, "tier": 1}, {"gpu": "GeForce GTX 970", "comp": 15.4, "fps_4k": 8.2, "fps_1440": 14.0, "fps_1080": 23.9, "date": "09/19/2014", "arch": "Maxwell", "memory": "4GB GDDR5", "wattage": "145W", "source": "Extrapolated (2022-2024 Data, Local 10-Anchor)", "type": "Desktop", "color": "#FFF8E1", "comp_pct": 9.6, "fps_4k_pct": 7.4, "fps_1440_pct": 8.4, "fps_1080_pct": 11.7, "steam_pct_below": 3.2, "tier": 1}, {"gpu": "GeForce GTX 980", "comp": 16.6, "fps_4k": 8.7, "fps_1440": 15.2, "fps_1080": 26.0, "date": "09/19/2014", "arch": "Maxwell", "memory": "4GB GDDR5", "wattage": "165W", "source": "Extrapolated (2022-2024 Data, Local 10-Anchor)", "type": "Desktop", "color": "#EDE6CF", "comp_pct": 10.3, "fps_4k_pct": 7.9, "fps_1440_pct": 9.1, "fps_1080_pct": 12.8, "steam_pct_below": 3.5, "tier": 1}, {"gpu": "GeForce GTX 980 Ti", "comp": 21.3, "fps_4k": 10.2, "fps_1440": 21.3, "fps_1080": 32.4, "date": "06/02/2015", "arch": "Maxwell", "memory": "6GB GDDR5", "wattage": "250W", "source": "Extrapolated (2022-2024 Data, Local 10-Anchor)", "type": "Desktop", "color": "#FFF8E1", "comp_pct": 13.3, "fps_4k_pct": 9.2, "fps_1440_pct": 12.7, "fps_1080_pct": 15.9, "steam_pct_below": 3.5, "tier": 1}, {"gpu": "GeForce RTX 2060", "comp": 32.3, "fps_4k": 14.9, "fps_1440": 32.1, "fps_1080": 50.0, "date": "01/15/2019", "arch": "Turing", "memory": "6GB GDDR6", "wattage": "160W", "source": "Extrapolated (2022-2024 Data, Local 10-Anchor)", "type": "Desktop", "color": "#F9FBE7", "comp_pct": 20.1, "fps_4k_pct": 13.4, "fps_1440_pct": 19.2, "fps_1080_pct": 24.5, "steam_pct_below": 12.8, "tier": 1}, {"gpu": "GeForce RTX 2060 Super", "comp": 38.6, "fps_4k": 18.2, "fps_1440": 38.7, "fps_1080": 59.0, "date": "07/09/2019", "arch": "Turing", "memory": "8GB GDDR6", "wattage": "175W", "source": "Extrapolated (2022-2024 Data, Local 10-Anchor)", "type": "Desktop", "color": "#E7E9D5", "comp_pct": 24.0, "fps_4k_pct": 16.4, "fps_1440_pct": 23.1, "fps_1080_pct": 28.9, "steam_pct_below": 15.5, "tier": 1}, {"gpu": "GeForce RTX 2070", "comp": 41.5, "fps_4k": 20.2, "fps_1440": 41.5, "fps_1080": 62.9, "date": "10/17/2018", "arch": "Turing", "memory": "8GB GDDR6", "wattage": "175W", "source": "Extrapolated (2022-2024 Data, Local 10-Anchor)", "type": "Desktop", "color": "#F9FBE7", "comp_pct": 25.8, "fps_4k_pct": 18.2, "fps_1440_pct": 24.8, "fps_1080_pct": 30.9, "steam_pct_below": 22.2, "tier": 1}, {"gpu": "GeForce RTX 2070 Super", "comp": 45.6, "fps_4k": 20.3, "fps_1440": 46.7, "fps_1080": 69.8, "date": "07/09/2019", "arch": "Turing", "memory": "8GB GDDR6", "wattage": "215W", "source": "Extrapolated (2022-2024 Data, Local 10-Anchor)", "type": "Desktop", "color": "#E7E9D5", "comp_pct": 28.4, "fps_4k_pct": 18.3, "fps_1440_pct": 27.9, "fps_1080_pct": 34.2, "steam_pct_below": 36.0, "tier": 1}, {"gpu": "GeForce RTX 2080", "comp": 49.3, "fps_4k": 22.9, "fps_1440": 50.6, "fps_1080": 74.3, "date": "09/20/2018", "arch": "Turing", "memory": "8GB GDDR6", "wattage": "215W", "source": "Extrapolated (2022-2024 Data, Local 10-Anchor)", "type": "Desktop", "color": "#F9FBE7", "comp_pct": 30.7, "fps_4k_pct": 20.7, "fps_1440_pct": 30.2, "fps_1080_pct": 36.5, "steam_pct_below": 42.9, "tier": 1}, {"gpu": "GeForce RTX 3060", "comp": 43.0, "fps_4k": 20.6, "fps_1440": 43.2, "fps_1080": 65.2, "date": "02/25/2021", "arch": "Ampere", "memory": "12GB GDDR6", "wattage": "170W", "source": "Extrapolated (2022-2024 Data, Local 10-Anchor)", "type": "Desktop", "color": "#DFE6D7", "comp_pct": 26.8, "fps_4k_pct": 18.6, "fps_1440_pct": 25.8, "fps_1080_pct": 32.0, "steam_pct_below": 28.4, "tier": 1}, {"gpu": "Intel Arc A380", "comp": 15.7, "fps_4k": 8.3, "fps_1440": 14.4, "fps_1080": 24.5, "date": "06/23/2022", "arch": "Alchemist (Xe-HPG)", "memory": "6GB GDDR6", "wattage": "75W", "source": "Extrapolated (2022-2024 Data, Local 10-Anchor)", "type": "Desktop", "color": "#D1E0EB", "comp_pct": 9.8, "fps_4k_pct": 7.5, "fps_1440_pct": 8.6, "fps_1080_pct": 12.0, "steam_pct_below": 3.2, "tier": 1}, {"gpu": "Radeon R9 390", "comp": 16.7, "fps_4k": 8.7, "fps_1440": 15.3, "fps_1080": 26.1, "date": "06/18/2015", "arch": "GCN 3", "memory": "8GB GDDR5", "wattage": "275W", "source": "Extrapolated (2022-2024 Data, Local 10-Anchor)", "type": "Desktop", "color": "#EAD2DA", "comp_pct": 10.4, "fps_4k_pct": 7.9, "fps_1440_pct": 9.1, "fps_1080_pct": 12.8, "steam_pct_below": 3.5, "tier": 1}, {"gpu": "Radeon R9 Fury X", "comp": 19.7, "fps_4k": 9.9, "fps_1440": 18.4, "fps_1080": 30.9, "date": "06/24/2015", "arch": "GCN 3", "memory": "4GB HBM", "wattage": "275W", "source": "Extrapolated (2022-2024 Data, Local 10-Anchor)", "type": "Desktop", "color": "#FCE4EC", "comp_pct": 12.3, "fps_4k_pct": 8.9, "fps_1440_pct": 11.0, "fps_1080_pct": 15.2, "steam_pct_below": 3.5, "tier": 1}, {"gpu": "Radeon RX 550 4GB", "comp": 7.2, "fps_4k": 3.8, "fps_1440": 6.6, "fps_1080": 11.1, "date": "\u2014", "arch": "\u2014", "memory": "4GB GDDR5", "wattage": "50W", "source": "Extrapolated (2022-2024 Data, Local 10-Anchor)", "type": "Desktop", "color": "#E3E3E3", "comp_pct": 4.5, "fps_4k_pct": 3.4, "fps_1440_pct": 3.9, "fps_1080_pct": 5.4, "steam_pct_below": 1.3, "tier": 1}, {"gpu": "Radeon RX 5500 XT 4GB", "comp": 18.7, "fps_4k": 9.7, "fps_1440": 17.3, "fps_1080": 29.2, "date": "12/12/2019", "arch": "RDNA 1", "memory": "4GB GDDR6", "wattage": "130W", "source": "Extrapolated (2022-2024 Data, Local 10-Anchor)", "type": "Desktop", "color": "#FFF8F0", "comp_pct": 11.6, "fps_4k_pct": 8.8, "fps_1440_pct": 10.3, "fps_1080_pct": 14.3, "steam_pct_below": 3.5, "tier": 1}, {"gpu": "Radeon RX 5500 XT 8GB", "comp": 22.1, "fps_4k": 10.5, "fps_1440": 21.1, "fps_1080": 34.8, "date": "12/12/2019", "arch": "RDNA 1", "memory": "8GB GDDR6", "wattage": "130W", "source": "Extrapolated (2022-2024 Data, Local 10-Anchor)", "type": "Desktop", "color": "#EDE6DE", "comp_pct": 13.8, "fps_4k_pct": 9.5, "fps_1440_pct": 12.6, "fps_1080_pct": 17.1, "steam_pct_below": 3.5, "tier": 1}, {"gpu": "Radeon RX 560 4GB", "comp": 8.4, "fps_4k": 4.5, "fps_1440": 7.7, "fps_1080": 12.9, "date": "05/18/2017", "arch": "Polaris", "memory": "4GB GDDR5", "wattage": "80W", "source": "Extrapolated (2022-2024 Data, Local 10-Anchor)", "type": "Desktop", "color": "#FFEBEE", "comp_pct": 5.2, "fps_4k_pct": 4.1, "fps_1440_pct": 4.6, "fps_1080_pct": 6.3, "steam_pct_below": 1.3, "tier": 1}, {"gpu": "Radeon RX 5600 XT", "comp": 32.3, "fps_4k": 14.8, "fps_1440": 31.4, "fps_1080": 50.7, "date": "01/21/2020", "arch": "RDNA 1", "memory": "8GB GDDR6", "wattage": "160W", "source": "Extrapolated (2022-2024 Data, Local 10-Anchor)", "type": "Desktop", "color": "#FFF8F0", "comp_pct": 20.1, "fps_4k_pct": 13.4, "fps_1440_pct": 18.8, "fps_1080_pct": 24.9, "steam_pct_below": 12.8, "tier": 1}, {"gpu": "Radeon RX 570 4GB", "comp": 16.0, "fps_4k": 8.5, "fps_1440": 14.9, "fps_1080": 24.6, "date": "04/18/2017", "arch": "Polaris", "memory": "4GB GDDR5", "wattage": "150W", "source": "Extrapolated (2022-2024 Data, Local 10-Anchor)", "type": "Desktop", "color": "#EDD9DC", "comp_pct": 10.0, "fps_4k_pct": 7.7, "fps_1440_pct": 8.9, "fps_1080_pct": 12.1, "steam_pct_below": 3.2, "tier": 1}, {"gpu": "Radeon RX 5700", "comp": 35.9, "fps_4k": 16.3, "fps_1440": 34.9, "fps_1080": 56.6, "date": "07/07/2019", "arch": "RDNA 1", "memory": "8GB GDDR6", "wattage": "180W", "source": "Extrapolated (2022-2024 Data, Local 10-Anchor)", "type": "Desktop", "color": "#EDE6DE", "comp_pct": 22.4, "fps_4k_pct": 14.7, "fps_1440_pct": 20.9, "fps_1080_pct": 27.8, "steam_pct_below": 15.5, "tier": 1}, {"gpu": "Radeon RX 580 8GB", "comp": 20.1, "fps_4k": 9.9, "fps_1440": 19.4, "fps_1080": 31.0, "date": "04/18/2017", "arch": "Polaris", "memory": "8GB GDDR5", "wattage": "185W", "source": "Extrapolated (2022-2024 Data, Local 10-Anchor)", "type": "Desktop", "color": "#FFEBEE", "comp_pct": 12.5, "fps_4k_pct": 8.9, "fps_1440_pct": 11.6, "fps_1080_pct": 15.2, "steam_pct_below": 3.5, "tier": 1}, {"gpu": "Radeon RX 590", "comp": 22.2, "fps_4k": 10.4, "fps_1440": 21.7, "fps_1080": 34.5, "date": "11/15/2018", "arch": "Polaris", "memory": "8GB GDDR5", "wattage": "225W", "source": "Extrapolated (2022-2024 Data, Local 10-Anchor)", "type": "Desktop", "color": "#EDD9DC", "comp_pct": 13.8, "fps_4k_pct": 9.4, "fps_1440_pct": 13.0, "fps_1080_pct": 16.9, "steam_pct_below": 3.5, "tier": 1}, {"gpu": "Radeon RX 6400", "comp": 13.5, "fps_4k": 7.3, "fps_1440": 12.1, "fps_1080": 21.1, "date": "04/20/2022", "arch": "RDNA 2", "memory": "4GB GDDR6", "wattage": "53W", "source": "Extrapolated (2022-2024 Data, Local 10-Anchor)", "type": "Desktop", "color": "#EDE1CE", "comp_pct": 8.4, "fps_4k_pct": 6.6, "fps_1440_pct": 7.2, "fps_1080_pct": 10.4, "steam_pct_below": 3.2, "tier": 1}, {"gpu": "Radeon RX 6500 XT", "comp": 16.2, "fps_4k": 8.4, "fps_1440": 13.5, "fps_1080": 26.8, "date": "01/19/2022", "arch": "RDNA 2", "memory": "4GB GDDR6", "wattage": "107W", "source": "Extrapolated (2022-2024 Data, Local 10-Anchor)", "type": "Desktop", "color": "#FFF3E0", "comp_pct": 10.1, "fps_4k_pct": 7.6, "fps_1440_pct": 8.1, "fps_1080_pct": 13.2, "steam_pct_below": 3.2, "tier": 1}, {"gpu": "Radeon RX Vega 56", "comp": 28.4, "fps_4k": 13.0, "fps_1440": 27.7, "fps_1080": 44.4, "date": "08/28/2017", "arch": "Vega (GCN 5)", "memory": "8GB HBM2", "wattage": "210W", "source": "Extrapolated (2022-2024 Data, Local 10-Anchor)", "type": "Desktop", "color": "#E9D7D5", "comp_pct": 17.7, "fps_4k_pct": 11.7, "fps_1440_pct": 16.6, "fps_1080_pct": 21.8, "steam_pct_below": 3.5, "tier": 1}, {"gpu": "GeForce RTX 4050 Laptop", "comp": 33.6, "fps_4k": 12.8, "fps_1440": 35.1, "fps_1080": 52.8, "date": "02/08/2023", "arch": "Ada Lovelace", "memory": "6GB GDDR6", "wattage": "115W", "source": "Laptop GPU Projection (Notebookcheck-verified ratio to same-name desktop, cross-checked vs Tom's Hardware)", "type": "Laptop", "color": "#DCEDC8", "comp_pct": 20.9, "fps_4k_pct": 11.6, "fps_1440_pct": 21.0, "fps_1080_pct": 25.9, "steam_pct_below": 12.8, "tier": 2, "detail": "82% of the RTX 4060 Laptop's own estimate (itself an interpolation) \u2014 not benchmarked directly."}, {"gpu": "GeForce RTX 3060 Laptop", "comp": 31.4, "fps_4k": 16.6, "fps_1440": 31.4, "fps_1080": 46.1, "date": "01/12/2021", "arch": "Ampere", "memory": "6GB GDDR6", "wattage": "115W", "source": "Laptop GPU Projection (Notebookcheck-verified ratio to same-name desktop, cross-checked vs Tom's Hardware)", "type": "Laptop", "color": "#F1F8E9", "comp_pct": 19.6, "fps_4k_pct": 15.0, "fps_1440_pct": 18.8, "fps_1080_pct": 22.6, "steam_pct_below": 9.9, "tier": 1}, {"gpu": "Xbox Series S", "comp": 20.6, "fps_4k": 10.1, "fps_1440": 19.1, "fps_1080": 32.7, "date": "11/10/2020", "arch": "RDNA 2 (Custom)", "memory": "10GB GDDR6 (shared)", "wattage": "75W", "source": "Console GPU Estimate (Digital Foundry / Gamers Nexus matched-hardware testing)", "type": "Console", "color": "#EDE7B2", "comp_pct": 12.8, "fps_4k_pct": 9.1, "fps_1440_pct": 11.4, "fps_1080_pct": 16.0, "steam_pct_below": 3.5, "tier": 1}];
+
+// ── Populate selects ───────────────────────────────────────────────────────
+const RT_DATA = [{"gpu": "GeForce RTX 5090", "rt_4k": 64.1, "rt_1440": 100.8, "rt_1080": 125.7, "rt_1080_med": null, "rt_source": "TH 2026 RT Native", "rt_4k_pct": 100.0, "rt_1440_pct": 100.0, "rt_1080_pct": 100.0, "tier": 0}, {"gpu": "GeForce RTX 5080", "rt_4k": 42.1, "rt_1440": 74.0, "rt_1080": 98.3, "rt_1080_med": null, "rt_source": "TH 2026 RT Native", "rt_4k_pct": 65.7, "rt_1440_pct": 73.4, "rt_1080_pct": 78.2, "tier": 0}, {"gpu": "GeForce RTX 5070 Ti", "rt_4k": 36.7, "rt_1440": 66.2, "rt_1080": 90.4, "rt_1080_med": null, "rt_source": "TH 2026 RT Native", "rt_4k_pct": 57.3, "rt_1440_pct": 65.7, "rt_1080_pct": 71.9, "tier": 0}, {"gpu": "GeForce RTX 5070", "rt_4k": 22.7, "rt_1440": 51.5, "rt_1080": 74.1, "rt_1080_med": null, "rt_source": "TH 2026 RT Native", "rt_4k_pct": 35.4, "rt_1440_pct": 51.1, "rt_1080_pct": 58.9, "tier": 0}, {"gpu": "GeForce RTX 5060 Ti 16GB", "rt_4k": 20.6, "rt_1440": 38.9, "rt_1080": 56.2, "rt_1080_med": null, "rt_source": "TH 2026 RT Native", "rt_4k_pct": 32.1, "rt_1440_pct": 38.6, "rt_1080_pct": 44.7, "tier": 0}, {"gpu": "GeForce RTX 5060 Ti 8GB", "rt_4k": 7.2, "rt_1440": 26.6, "rt_1080": 46.0, "rt_1080_med": null, "rt_source": "TH 2026 RT Native", "rt_4k_pct": 11.2, "rt_1440_pct": 26.4, "rt_1080_pct": 36.6, "tier": 0}, {"gpu": "GeForce RTX 5060", "rt_4k": 6.8, "rt_1440": 24.6, "rt_1080": 40.9, "rt_1080_med": null, "rt_source": "TH 2026 RT Native", "rt_4k_pct": 10.6, "rt_1440_pct": 24.4, "rt_1080_pct": 32.5, "tier": 0}, {"gpu": "GeForce RTX 5050", "rt_4k": 6.2, "rt_1440": 18.7, "rt_1080": 31.2, "rt_1080_med": null, "rt_source": "TH 2026 RT Native", "rt_4k_pct": 9.7, "rt_1440_pct": 18.6, "rt_1080_pct": 24.8, "tier": 0}, {"gpu": "GeForce RTX 4060 Ti 8GB", "rt_4k": 8.1, "rt_1440": 25.7, "rt_1080": 40.8, "rt_1080_med": null, "rt_source": "TH 2026 RT Native", "rt_4k_pct": 12.6, "rt_1440_pct": 25.5, "rt_1080_pct": 32.5, "tier": 0}, {"gpu": "GeForce RTX 3060 12GB", "rt_4k": 9.5, "rt_1440": 20.7, "rt_1080": 30.4, "rt_1080_med": null, "rt_source": "TH 2026 RT Native", "rt_4k_pct": 14.8, "rt_1440_pct": 20.5, "rt_1080_pct": 24.2, "tier": 0}, {"gpu": "Radeon RX 9070 XT", "rt_4k": 30.1, "rt_1440": 55.5, "rt_1080": 77.8, "rt_1080_med": null, "rt_source": "TH 2026 RT Native", "rt_4k_pct": 47.0, "rt_1440_pct": 55.1, "rt_1080_pct": 61.9, "tier": 0}, {"gpu": "Radeon RX 9070", "rt_4k": 25.8, "rt_1440": 47.6, "rt_1080": 67.6, "rt_1080_med": null, "rt_source": "TH 2026 RT Native", "rt_4k_pct": 40.2, "rt_1440_pct": 47.2, "rt_1080_pct": 53.8, "tier": 0}, {"gpu": "Radeon RX 9070 GRE", "rt_4k": 15.5, "rt_1440": 37.3, "rt_1080": 58.4, "rt_1080_med": null, "rt_source": "TH 2026 RT Native", "rt_4k_pct": 24.2, "rt_1440_pct": 37.0, "rt_1080_pct": 46.5, "tier": 0}, {"gpu": "Radeon RX 9060 XT 16GB", "rt_4k": 14.9, "rt_1440": 31.0, "rt_1080": 45.3, "rt_1080_med": null, "rt_source": "TH 2026 RT Native", "rt_4k_pct": 23.2, "rt_1440_pct": 30.8, "rt_1080_pct": 36.0, "tier": 0}, {"gpu": "Radeon RX 9060 XT 8GB", "rt_4k": 7.3, "rt_1440": 20.2, "rt_1080": 33.0, "rt_1080_med": null, "rt_source": "TH 2026 RT Native", "rt_4k_pct": 11.4, "rt_1440_pct": 20.0, "rt_1080_pct": 26.3, "tier": 0}, {"gpu": "Intel Arc B580", "rt_4k": 3.8, "rt_1440": 23.1, "rt_1080": 34.9, "rt_1080_med": null, "rt_source": "TH 2026 RT Native", "rt_4k_pct": 5.9, "rt_1440_pct": 22.9, "rt_1080_pct": 27.8, "tier": 0}, {"gpu": "Intel Arc B570", "rt_4k": 3.3, "rt_1440": 13.1, "rt_1080": 19.8, "rt_1080_med": null, "rt_source": "TH 2026 RT Native", "rt_4k_pct": 5.1, "rt_1440_pct": 13.0, "rt_1080_pct": 15.8, "tier": 0}, {"gpu": "GeForce RTX 4090", "rt_4k": 52.2, "rt_1440": 87.7, "rt_1080": 112.3, "rt_1080_med": 165.9, "rt_source": "TH 2026 RT (Ultra tiers) + TH 2022 RT (1080p Medium)", "rt_4k_pct": 81.4, "rt_1440_pct": 87.0, "rt_1080_pct": 89.3, "tier": 1}, {"gpu": "GeForce RTX 4080 Super", "rt_4k": 38.5, "rt_1440": 69.5, "rt_1080": 94.3, "rt_1080_med": 144.0, "rt_source": "TH 2026 RT (Ultra tiers) + TH 2022 RT (1080p Medium)", "rt_4k_pct": 60.1, "rt_1440_pct": 68.9, "rt_1080_pct": 75.0, "tier": 1}, {"gpu": "GeForce RTX 4080", "rt_4k": 37.4, "rt_1440": 68.4, "rt_1080": 92.8, "rt_1080_med": 141.6, "rt_source": "TH 2026 RT (Ultra tiers) + TH 2022 RT (1080p Medium)", "rt_4k_pct": 58.3, "rt_1440_pct": 67.9, "rt_1080_pct": 73.8, "tier": 1}, {"gpu": "GeForce RTX 4070 Ti Super", "rt_4k": 32.2, "rt_1440": 60.0, "rt_1080": 87.9, "rt_1080_med": 128.2, "rt_source": "TH 2026 RT (Ultra tiers) + TH 2022 RT (1080p Medium)", "rt_4k_pct": 50.2, "rt_1440_pct": 59.5, "rt_1080_pct": 69.9, "tier": 1}, {"gpu": "GeForce RTX 4070 Ti", "rt_4k": 23.9, "rt_1440": 55.3, "rt_1080": 78.5, "rt_1080_med": 118.6, "rt_source": "TH 2026 RT (Ultra tiers) + TH 2022 RT (1080p Medium)", "rt_4k_pct": 37.3, "rt_1440_pct": 54.9, "rt_1080_pct": 62.5, "tier": 1}, {"gpu": "GeForce RTX 4070 Super", "rt_4k": 22.1, "rt_1440": 43.6, "rt_1080": 72.5, "rt_1080_med": 113.0, "rt_source": "TH 2026 RT (Ultra tiers) + TH 2022 RT (1080p Medium)", "rt_4k_pct": 34.5, "rt_1440_pct": 43.3, "rt_1080_pct": 57.7, "tier": 1}, {"gpu": "GeForce RTX 3090 Ti", "rt_4k": 29.4, "rt_1440": 52.2, "rt_1080": 72.3, "rt_1080_med": 119.3, "rt_source": "TH 2026 RT (Ultra tiers) + TH 2022 RT (1080p Medium)", "rt_4k_pct": 45.9, "rt_1440_pct": 51.8, "rt_1080_pct": 57.5, "tier": 1}, {"gpu": "GeForce RTX 3090", "rt_4k": 26.3, "rt_1440": 47.4, "rt_1080": 66.5, "rt_1080_med": 112.4, "rt_source": "TH 2026 RT (Ultra tiers) + TH 2022 RT (1080p Medium)", "rt_4k_pct": 41.0, "rt_1440_pct": 47.0, "rt_1080_pct": 52.9, "tier": 1}, {"gpu": "GeForce RTX 3080 Ti", "rt_4k": 18.0, "rt_1440": 46.2, "rt_1080": 64.6, "rt_1080_med": 110.4, "rt_source": "TH 2026 RT (Ultra tiers) + TH 2022 RT (1080p Medium)", "rt_4k_pct": 28.1, "rt_1440_pct": 45.8, "rt_1080_pct": 51.4, "tier": 1}, {"gpu": "GeForce RTX 4070", "rt_4k": 19.3, "rt_1440": 38.6, "rt_1080": 63.8, "rt_1080_med": 101.4, "rt_source": "TH 2026 RT (Ultra tiers) + TH 2022 RT (1080p Medium)", "rt_4k_pct": 30.1, "rt_1440_pct": 38.3, "rt_1080_pct": 50.8, "tier": 1}, {"gpu": "GeForce RTX 3080", "rt_4k": 13.8, "rt_1440": 34.7, "rt_1080": 51.3, "rt_1080_med": 99.8, "rt_source": "TH 2026 RT (Ultra tiers) + TH 2022 RT (1080p Medium)", "rt_4k_pct": 21.5, "rt_1440_pct": 34.4, "rt_1080_pct": 40.8, "tier": 1}, {"gpu": "GeForce RTX 4060 Ti 16GB", "rt_4k": 16.8, "rt_1440": 32.7, "rt_1080": 48.3, "rt_1080_med": 75.0, "rt_source": "TH 2026 RT (Ultra tiers) + TH 2022 RT (1080p Medium)", "rt_4k_pct": 26.2, "rt_1440_pct": 32.4, "rt_1080_pct": 38.4, "tier": 1}, {"gpu": "Radeon RX 6950 XT", "rt_4k": 15.6, "rt_1440": 32.8, "rt_1080": 46.9, "rt_1080_med": 80.1, "rt_source": "TH 2026 RT (Ultra tiers) + TH 2022 RT (1080p Medium)", "rt_4k_pct": 24.3, "rt_1440_pct": 32.5, "rt_1080_pct": 37.3, "tier": 1}, {"gpu": "GeForce RTX 3070 Ti", "rt_4k": 8.8, "rt_1440": 27.7, "rt_1080": 42.1, "rt_1080_med": 84.0, "rt_source": "TH 2026 RT (Ultra tiers) + TH 2022 RT (1080p Medium)", "rt_4k_pct": 13.7, "rt_1440_pct": 27.5, "rt_1080_pct": 33.5, "tier": 1}, {"gpu": "Radeon RX 6800 XT", "rt_4k": 14.1, "rt_1440": 29.6, "rt_1080": 42.0, "rt_1080_med": 70.0, "rt_source": "TH 2026 RT (Ultra tiers) + TH 2022 RT (1080p Medium)", "rt_4k_pct": 22.0, "rt_1440_pct": 29.4, "rt_1080_pct": 33.4, "tier": 1}, {"gpu": "GeForce RTX 3070", "rt_4k": 8.3, "rt_1440": 26.2, "rt_1080": 39.7, "rt_1080_med": 78.2, "rt_source": "TH 2026 RT (Ultra tiers) + TH 2022 RT (1080p Medium)", "rt_4k_pct": 12.9, "rt_1440_pct": 26.0, "rt_1080_pct": 31.6, "tier": 1}, {"gpu": "GeForce RTX 4060", "rt_4k": 6.8, "rt_1440": 21.3, "rt_1080": 33.6, "rt_1080_med": 58.8, "rt_source": "TH 2026 RT (Ultra tiers) + TH 2022 RT (1080p Medium)", "rt_4k_pct": 10.6, "rt_1440_pct": 21.1, "rt_1080_pct": 26.7, "tier": 1}, {"gpu": "GeForce RTX 3060 Ti", "rt_4k": 7.4, "rt_1440": 22.3, "rt_1080": 33.2, "rt_1080_med": 69.5, "rt_source": "TH 2026 RT (Ultra tiers) + TH 2022 RT (1080p Medium)", "rt_4k_pct": 11.5, "rt_1440_pct": 22.1, "rt_1080_pct": 26.4, "tier": 1}, {"gpu": "Radeon RX 7900 XTX", "rt_4k": 27.3, "rt_1440": 50.5, "rt_1080": 70.4, "rt_1080_med": 109.6, "rt_source": "TH 2026 RT (Ultra tiers) + TH 2022 RT (1080p Medium)", "rt_4k_pct": 42.6, "rt_1440_pct": 50.1, "rt_1080_pct": 56.0, "tier": 1}, {"gpu": "Radeon RX 7900 XT", "rt_4k": 23.1, "rt_1440": 43.5, "rt_1080": 61.7, "rt_1080_med": 100.3, "rt_source": "TH 2026 RT (Ultra tiers) + TH 2022 RT (1080p Medium)", "rt_4k_pct": 36.0, "rt_1440_pct": 43.2, "rt_1080_pct": 49.1, "tier": 1}, {"gpu": "Radeon RX 7800 XT", "rt_4k": 15.1, "rt_1440": 33.5, "rt_1080": 48.4, "rt_1080_med": 77.5, "rt_source": "TH 2026 RT (Ultra tiers) + TH 2022 RT (1080p Medium)", "rt_4k_pct": 23.6, "rt_1440_pct": 33.2, "rt_1080_pct": 38.5, "tier": 1}, {"gpu": "Radeon RX 6900 XT", "rt_4k": 15.1, "rt_1440": 32.1, "rt_1080": 45.2, "rt_1080_med": 75.4, "rt_source": "TH 2026 RT (Ultra tiers) + TH 2022 RT (1080p Medium)", "rt_4k_pct": 23.6, "rt_1440_pct": 31.8, "rt_1080_pct": 36.0, "tier": 1}, {"gpu": "Radeon RX 7700 XT", "rt_4k": 9.8, "rt_1440": 25.3, "rt_1080": 41.6, "rt_1080_med": 68.4, "rt_source": "TH 2026 RT (Ultra tiers) + TH 2022 RT (1080p Medium)", "rt_4k_pct": 15.3, "rt_1440_pct": 25.1, "rt_1080_pct": 33.1, "tier": 1}, {"gpu": "Radeon RX 6750 XT", "rt_4k": 8.1, "rt_1440": 19.1, "rt_1080": 28.5, "rt_1080_med": 49.8, "rt_source": "TH 2026 RT (Ultra tiers) + TH 2022 RT (1080p Medium)", "rt_4k_pct": 12.6, "rt_1440_pct": 18.9, "rt_1080_pct": 22.7, "tier": 1}, {"gpu": "Radeon RX 6700 XT", "rt_4k": 7.9, "rt_1440": 18.0, "rt_1080": 27.1, "rt_1080_med": 46.6, "rt_source": "TH 2026 RT (Ultra tiers) + TH 2022 RT (1080p Medium)", "rt_4k_pct": 12.3, "rt_1440_pct": 17.9, "rt_1080_pct": 21.6, "tier": 1}, {"gpu": "Radeon RX 7600 XT", "rt_4k": 8.5, "rt_1440": 18.1, "rt_1080": 27.0, "rt_1080_med": 44.2, "rt_source": "TH 2026 RT (Ultra tiers) + TH 2022 RT (1080p Medium)", "rt_4k_pct": 13.3, "rt_1440_pct": 18.0, "rt_1080_pct": 21.5, "tier": 1}, {"gpu": "Radeon RX 6600 XT", "rt_4k": 3.4, "rt_1440": 9.1, "rt_1080": 17.2, "rt_1080_med": 36.7, "rt_source": "TH 2026 RT (Ultra tiers) + TH 2022 RT (1080p Medium)", "rt_4k_pct": 5.3, "rt_1440_pct": 9.0, "rt_1080_pct": 13.7, "tier": 1}, {"gpu": "Radeon RX 7600", "rt_4k": 4.1, "rt_1440": 9.3, "rt_1080": 16.0, "rt_1080_med": 38.3, "rt_source": "TH 2026 RT (Ultra tiers) + TH 2022 RT (1080p Medium)", "rt_4k_pct": 6.4, "rt_1440_pct": 9.2, "rt_1080_pct": 12.7, "tier": 1}, {"gpu": "Radeon RX 6650 XT", "rt_4k": 3.4, "rt_1440": 9.2, "rt_1080": 15.5, "rt_1080_med": 37.6, "rt_source": "TH 2026 RT (Ultra tiers) + TH 2022 RT (1080p Medium)", "rt_4k_pct": 5.3, "rt_1440_pct": 9.1, "rt_1080_pct": 12.3, "tier": 1}, {"gpu": "Radeon RX 6600", "rt_4k": 3.1, "rt_1440": 7.7, "rt_1080": 12.8, "rt_1080_med": 30.8, "rt_source": "TH 2026 RT (Ultra tiers) + TH 2022 RT (1080p Medium)", "rt_4k_pct": 4.8, "rt_1440_pct": 7.6, "rt_1080_pct": 10.2, "tier": 1}, {"gpu": "GeForce RTX 3050", "rt_4k": 4.5, "rt_1440": 12.6, "rt_1080": 19.6, "rt_1080_med": 36.9, "rt_source": "TH 2026 RT (Ultra tiers) + TH 2022 RT (1080p Medium)", "rt_4k_pct": 7.0, "rt_1440_pct": 12.5, "rt_1080_pct": 15.6, "tier": 1}, {"gpu": "GeForce RTX 3080 12GB", "rt_4k": 24.1, "rt_1440": 44.6, "rt_1080": 67.3, "rt_1080_med": 107.6, "rt_source": "Projected: TH 2022 RT \u00d7 RTX 4090 scale factor", "rt_4k_pct": 37.6, "rt_1440_pct": 44.2, "rt_1080_pct": 53.5, "tier": 2}, {"gpu": "Radeon RX 7900 GRE", "rt_4k": 18.6, "rt_1440": 34.8, "rt_1080": 52.5, "rt_1080_med": 87.7, "rt_source": "Projected: TH 2022 RT \u00d7 RTX 4090 scale factor", "rt_4k_pct": 29.0, "rt_1440_pct": 34.5, "rt_1080_pct": 41.8, "tier": 2}, {"gpu": "Titan RTX", "rt_4k": 16.2, "rt_1440": 29.5, "rt_1080": 43.9, "rt_1080_med": 74.4, "rt_source": "Projected: TH 2022 RT \u00d7 RTX 4090 scale factor", "rt_4k_pct": 25.3, "rt_1440_pct": 29.3, "rt_1080_pct": 34.9, "tier": 2}, {"gpu": "GeForce RTX 2080 Ti", "rt_4k": null, "rt_1440": 27.8, "rt_1080": 41.8, "rt_1080_med": 70.9, "rt_source": "Projected: TH 2022 RT \u00d7 RTX 4090 scale factor", "rt_4k_pct": null, "rt_1440_pct": 27.6, "rt_1080_pct": 33.3, "tier": 2}, {"gpu": "GeForce RTX 2080 Super", "rt_4k": null, "rt_1440": 22.9, "rt_1080": 34.6, "rt_1080_med": 59.4, "rt_source": "Projected: TH 2022 RT \u00d7 RTX 4090 scale factor", "rt_4k_pct": null, "rt_1440_pct": 22.7, "rt_1080_pct": 27.5, "tier": 2}, {"gpu": "Radeon RX 6800", "rt_4k": null, "rt_1440": 22.2, "rt_1080": 33.9, "rt_1080_med": 60.1, "rt_source": "Projected: TH 2022 RT \u00d7 RTX 4090 scale factor", "rt_4k_pct": null, "rt_1440_pct": 22.0, "rt_1080_pct": 27.0, "tier": 2}, {"gpu": "GeForce RTX 2080", "rt_4k": null, "rt_1440": 21.5, "rt_1080": 32.7, "rt_1080_med": 57.1, "rt_source": "Projected: TH 2022 RT \u00d7 RTX 4090 scale factor", "rt_4k_pct": null, "rt_1440_pct": 21.3, "rt_1080_pct": 26.0, "tier": 2}, {"gpu": "Intel Arc A770 8GB", "rt_4k": null, "rt_1440": 21.0, "rt_1080": 31.9, "rt_1080_med": 54.2, "rt_source": "Projected: TH 2022 RT \u00d7 RTX 4090 scale factor", "rt_4k_pct": null, "rt_1440_pct": 20.8, "rt_1080_pct": 25.4, "tier": 2}, {"gpu": "Intel Arc A770 16GB", "rt_4k": null, "rt_1440": 21.4, "rt_1080": 31.8, "rt_1080_med": 54.1, "rt_source": "Projected: TH 2022 RT \u00d7 RTX 4090 scale factor", "rt_4k_pct": null, "rt_1440_pct": 21.2, "rt_1080_pct": 25.3, "tier": 2}, {"gpu": "Intel Arc A750", "rt_4k": null, "rt_1440": 19.8, "rt_1080": 30.2, "rt_1080_med": 51.0, "rt_source": "Projected: TH 2022 RT \u00d7 RTX 4090 scale factor", "rt_4k_pct": null, "rt_1440_pct": 19.6, "rt_1080_pct": 24.0, "tier": 2}, {"gpu": "GeForce RTX 2070 Super", "rt_4k": null, "rt_1440": 19.5, "rt_1080": 30.2, "rt_1080_med": 52.4, "rt_source": "Projected: TH 2022 RT \u00d7 RTX 4090 scale factor", "rt_4k_pct": null, "rt_1440_pct": 19.3, "rt_1080_pct": 24.0, "tier": 2}, {"gpu": "GeForce RTX 3060", "rt_4k": null, "rt_1440": 18.6, "rt_1080": 28.9, "rt_1080_med": 52.5, "rt_source": "Projected: TH 2022 RT \u00d7 RTX 4090 scale factor", "rt_4k_pct": null, "rt_1440_pct": 18.5, "rt_1080_pct": 23.0, "tier": 2}, {"gpu": "Intel Arc A580", "rt_4k": null, "rt_1440": 17.8, "rt_1080": 26.9, "rt_1080_med": 45.6, "rt_source": "Projected: TH 2022 RT \u00d7 RTX 4090 scale factor", "rt_4k_pct": null, "rt_1440_pct": 17.7, "rt_1080_pct": 21.4, "tier": 2}, {"gpu": "GeForce RTX 2070", "rt_4k": null, "rt_1440": 17.2, "rt_1080": 26.4, "rt_1080_med": 46.3, "rt_source": "Projected: TH 2022 RT \u00d7 RTX 4090 scale factor", "rt_4k_pct": null, "rt_1440_pct": 17.1, "rt_1080_pct": 21.0, "tier": 2}, {"gpu": "GeForce RTX 2060 Super", "rt_4k": null, "rt_1440": 16.3, "rt_1080": 25.1, "rt_1080_med": 44.5, "rt_source": "Projected: TH 2022 RT \u00d7 RTX 4090 scale factor", "rt_4k_pct": null, "rt_1440_pct": 16.2, "rt_1080_pct": 20.0, "tier": 2}, {"gpu": "Radeon RX 6700 10GB", "rt_4k": null, "rt_1440": 14.8, "rt_1080": 24.1, "rt_1080_med": 42.9, "rt_source": "Projected: TH 2022 RT \u00d7 RTX 4090 scale factor", "rt_4k_pct": null, "rt_1440_pct": 14.7, "rt_1080_pct": 19.2, "tier": 2}, {"gpu": "GeForce RTX 2060", "rt_4k": null, "rt_1440": null, "rt_1080": 20.9, "rt_1080_med": 38.4, "rt_source": "Projected: TH 2022 RT \u00d7 RTX 4090 scale factor", "rt_4k_pct": null, "rt_1440_pct": null, "rt_1080_pct": 16.6, "tier": 2}, {"gpu": "Intel Arc A380", "rt_4k": null, "rt_1440": null, "rt_1080": null, "rt_1080_med": 18.3, "rt_source": "Projected: TH 2022 RT \u00d7 RTX 4090 scale factor", "rt_4k_pct": null, "rt_1440_pct": null, "rt_1080_pct": null, "tier": 2}, {"gpu": "Radeon RX 6500 XT", "rt_4k": null, "rt_1440": null, "rt_1080": null, "rt_1080_med": 9.9, "rt_source": "Projected: TH 2022 RT \u00d7 RTX 4090 scale factor", "rt_4k_pct": null, "rt_1440_pct": null, "rt_1080_pct": null, "tier": 2}, {"gpu": "Radeon RX 6400", "rt_4k": null, "rt_1440": null, "rt_1080": null, "rt_1080_med": 8.3, "rt_source": "Projected: TH 2022 RT \u00d7 RTX 4090 scale factor", "rt_4k_pct": null, "rt_1440_pct": null, "rt_1080_pct": null, "tier": 2}, {"gpu": "Sony PlayStation 5", "rt_4k": 4.9, "rt_1440": 14.2, "rt_1080": 22.5, "rt_1080_med": null, "rt_source": "Console RT Estimate: 50% RTX 2060 / 50% RX 6700 (DF matched-settings + TH RT data)", "tier": 3, "detail": "Blend of RTX 2060 and RX 6700 (10GB), averaged. Both reference cards' own RT figures are themselves projected from 2022 Tom's Hardware RT data, scaled by RTX 4090's generational improvement \u2014 not native 2026 RT measurements. RTX 2060's 1440p/4K figures are further estimated from its measured 1080p relationship to RTX 2060 Super."}, {"gpu": "Xbox Series X", "rt_4k": 5.4, "rt_1440": 15.6, "rt_1080": 24.6, "rt_1080_med": null, "rt_source": "Console RT Estimate: 50% RTX 2060 Super / 50% RX 6700 (DF matched-settings + TH RT data)", "tier": 3, "detail": "Blend of RTX 2060 Super and RX 6700 (10GB), averaged. Both reference cards' own RT figures are themselves projected from 2022 Tom's Hardware RT data, scaled by RTX 4090's generational improvement \u2014 not native 2026 RT measurements. 4K figures for both cards are further estimated from nearby-tier cards' 4K-to-1080p ratio."}, {"gpu": "Sony PlayStation 5 Pro", "rt_4k": 8.3, "rt_1440": 26.2, "rt_1080": 39.7, "rt_1080_med": null, "rt_source": "Console RT Estimate: RTX 3070 (DF Alan Wake 2 comparison)", "tier": 3, "detail": "Single anchor: RTX 3070's ray tracing figure, itself projected from 2022 Tom's Hardware RT data \u2014 not a native 2026 RT measurement."}, {"gpu": "Steam Machine", "rt_4k": 3.7, "rt_1440": 8.4, "rt_1080": 14.4, "rt_1080_med": null, "rt_source": "Console RT Estimate: 90% of RX 7600 (architectural sibling, discounted)", "tier": 3, "detail": "90% of RX 7600's ray tracing figure. RX 7600's own RT numbers blend native-2026 Ultra-tier data with an older 2022 dataset for the 1080p Medium figure specifically."}, {"gpu": "Xbox Series S", "rt_4k": 2.1, "rt_1440": 6.0, "rt_1080": 9.5, "rt_1080_med": null, "rt_source": "Console RT Estimate: CU-ratio derived (38.5% of Series X RT) -- not a tested equivalent", "tier": 4, "detail": "38.5% of Xbox Series X's own RT figure (matching its CU count ratio to Series X), which is itself a three-step blended estimate. This is a derived scaling, not a tested equivalent for Series S specifically."}, {"gpu": "Steam Deck", "rt_4k": 1.6, "rt_1440": 3.7, "rt_1080": 6.5, "rt_1080_med": null, "rt_source": "Console RT Estimate: DF-measured 30fps@896x504 in Metro Exodus Enhanced, resolution-extrapolated", "tier_by_res": {"rt_1080": 2, "rt_1440": 3, "rt_4k": 4}, "detail_by_res": {"rt_1080": "Digital Foundry measured 30fps in Metro Exodus Enhanced at 896\u00d7504, extrapolated to 1080p assuming performance scales with pixel count. A real on-device measurement, one resolution-scaling step removed.", "rt_1440": "Same 896\u00d7504 measurement extrapolated further to 1440p \u2014 a bigger stretch than the 1080p figure. Treat with more caution.", "rt_4k": "Same 896\u00d7504 measurement extrapolated all the way to 4K \u2014 an 18x resolution stretch beyond what was actually measured. Mainly confirms 'very slow,' not a precise value."}}];
+
+function populateSelects() {
+  const sorted = [...GPU_DATA].sort((a,b) => {
+    const brand = n => n.startsWith('GeForce')?'1':n.startsWith('Radeon')?'2':n.startsWith('Intel')?'3':n.startsWith('Sony')||n.startsWith('Xbox')||n.startsWith('Steam')?'5':'4';
+    const ba = brand(a.gpu), bb = brand(b.gpu);
+    if (ba !== bb) return ba.localeCompare(bb);
+    return a.gpu.localeCompare(b.gpu);
+  });
+
+  const leftSel = document.getElementById('left-select');
+  const rightSel = document.getElementById('right-select');
+  const archFilter = document.getElementById('arch-filter');
+
+  const archs = [...new Set(GPU_DATA.map(r => r.arch).filter(a => a && a !== '—'))].sort();
+  archs.forEach(a => {
+    const o = document.createElement('option');
+    o.value = a; o.textContent = a;
+    archFilter.appendChild(o);
+  });
+
+  sorted.forEach((r, i) => {
+    const makeOpt = (sel) => {
+      const o = document.createElement('option');
+      o.value = r.gpu;
+      o.textContent = r.gpu + (r.type === 'Laptop' ? ' [Laptop]' : r.type === 'Console' ? ' [Console]' : '');
+      sel.appendChild(o);
+    };
+    makeOpt(leftSel);
+    makeOpt(rightSel);
+  });
+
+  // Defaults: RTX 5090 left, RTX 4090 right
+  leftSel.value = 'GeForce RTX 5090';
+  rightSel.value = 'GeForce RTX 4090';
+  updateCompare();
+}
+
+// ── Compare logic ──────────────────────────────────────────────────────────
+function getGPU(name) { return GPU_DATA.find(r => r.gpu === name); }
+
+function tierMark(tier, detail) {
+  if (tier == null || tier === 0) return '';
+  const stars = '*'.repeat(tier);
+  const generic = {1:'One step removed from a direct measurement.',
+                   2:'Two steps removed from a direct measurement.',
+                   3:'Three steps removed -- built by combining other estimates.',
+                   4:'Four+ steps removed, or a derived/extrapolated estimate rather than a tested equivalent.'};
+  const text = detail || generic[tier] || '';
+  return `<span class="conf-mark" title="${text.replace(/"/g,'&quot;')}">${stars}</span>`;
+}
+
+function fmtFps(v, tier, detail) {
+  if (v == null || v === 0) return '<span style="color:var(--text-faint)">—</span>';
+  return v.toFixed(1) + '<span style="opacity:0.5;font-size:11px;">fps</span>' + tierMark(tier, detail);
+}
+
+function fmtPct(v) {
+  if (v == null) return '';
+  return v.toFixed(1) + '%';
+}
+
+function fmtDiff(left, right) {
+  if (!left || !right || left === 0 || right === 0) return '<span class="diff-neu">—</span>';
+  const pct = ((left / right) - 1) * 100;
+  const cls = pct > 0.5 ? 'diff-pos' : pct < -0.5 ? 'diff-neg' : 'diff-neu';
+  const sign = pct >= 0 ? '+' : '';
+  return `<span class="${cls}">${sign}${pct.toFixed(1)}%</span>`;
+}
+
+function sectionHeaderRow(icon, label) {
+  return `<tr class="cmp-section-row"><td colspan="11" class="cmp-section-label">${icon} ${label}</td></tr>`;
+}
+
+function tierRow(t, isFirst) {
+  return `
+    <tr class="${isFirst?'highlight':''}">
+      <td class="ch-tier" colspan="1" style="font-size:11px;font-weight:700;color:var(--text-dim);letter-spacing:0.07em;text-transform:uppercase;">${t.label}</td>
+      <td colspan="3" style="text-align:center;padding:14px 16px;">
+        <div class="fps-big">${fmtFps(t.lv, t.ltier, t.ld)}</div>
+        <div class="fps-pct">${fmtPct(t.lp)} of RTX 5090</div>
+      </td>
+      <td colspan="2" style="text-align:center;padding:14px 4px;border-right:1px solid var(--border);">${fmtDiff(t.lv, t.rv)}</td>
+      <td colspan="2" style="text-align:center;padding:14px 4px;">${fmtDiff(t.rv, t.lv)}</td>
+      <td colspan="3" style="text-align:center;padding:14px 16px;">
+        <div class="fps-big">${fmtFps(t.rv, t.rtier, t.rd)}</div>
+        <div class="fps-pct">${fmtPct(t.rp)} of RTX 5090</div>
+      </td>
+    </tr>`;
+}
+
+function steamRow(L, R) {
+  const has = L.steam_pct_below != null && R.steam_pct_below != null;
+  const diffLR = has ? L.steam_pct_below - R.steam_pct_below : null;
+  const diffRL = has ? R.steam_pct_below - L.steam_pct_below : null;
+  const fmtPts = (d) => d == null ? '<span class="diff-neu">—</span>'
+    : `<span class="${d>=0?'diff-pos':'diff-neg'}">${(d>=0?'+':'')+d.toFixed(1)} pts</span>`;
+  return `
+    <tr class="cmp-steam-row">
+      <td class="ch-tier" colspan="1" style="font-size:11px;font-weight:700;color:var(--accent);letter-spacing:0.07em;text-transform:uppercase;">👥 Faster Than % of Steam Users*</td>
+      <td colspan="3" style="text-align:center;padding:14px 16px;">
+        <div class="fps-big" style="color:var(--accent);">${L.steam_pct_below != null ? L.steam_pct_below.toFixed(1)+'%' : '—'}</div>
+        <div class="fps-pct">July 2026 survey*</div>
+      </td>
+      <td colspan="2" style="text-align:center;padding:14px 4px;border-right:1px solid var(--border);">${fmtPts(diffLR)}</td>
+      <td colspan="2" style="text-align:center;padding:14px 4px;">${fmtPts(diffRL)}</td>
+      <td colspan="3" style="text-align:center;padding:14px 16px;">
+        <div class="fps-big" style="color:var(--accent);">${R.steam_pct_below != null ? R.steam_pct_below.toFixed(1)+'%' : '—'}</div>
+        <div class="fps-pct">July 2026 survey*</div>
+      </td>
+    </tr>`;
+}
+
+function updateCompare() {
+  const leftName = document.getElementById('left-select').value;
+  const rightName = document.getElementById('right-select').value;
+  const L = getGPU(leftName);
+  const R = getGPU(rightName);
+  if (!L || !R) return;
+
+  document.getElementById('th-left').textContent = L.gpu;
+  document.getElementById('th-right').textContent = R.gpu;
+  document.getElementById('th-vs-right').textContent = 'vs ' + R.gpu;
+  document.getElementById('th-vs-left').textContent = 'vs ' + L.gpu;
+
+  const rasterTiers = [
+    { label: 'Composite Avg', lv: L.comp, rv: R.comp, lp: L.comp_pct, rp: R.comp_pct, ltier: L.tier, rtier: R.tier, ld: L.detail||L.source, rd: R.detail||R.source },
+    { label: '4K Ultra',      lv: L.fps_4k, rv: R.fps_4k, lp: L.fps_4k_pct, rp: R.fps_4k_pct, ltier: L.tier, rtier: R.tier, ld: L.detail||L.source, rd: R.detail||R.source },
+    { label: '1440p Ultra',   lv: L.fps_1440, rv: R.fps_1440, lp: L.fps_1440_pct, rp: R.fps_1440_pct, ltier: L.tier, rtier: R.tier, ld: L.detail||L.source, rd: R.detail||R.source },
+    { label: '1080p Ultra',   lv: L.fps_1080, rv: R.fps_1080, lp: L.fps_1080_pct, rp: R.fps_1080_pct, ltier: L.tier, rtier: R.tier, ld: L.detail||L.source, rd: R.detail||R.source },
+  ];
+
+  let html = sectionHeaderRow('⚖️', 'Rasterization');
+  html += rasterTiers.map((t,i) => tierRow(t, i===0)).join('');
+  html += steamRow(L, R);
+
+  // Ray tracing section — same L/R selection, looked up in RT_DATA (now includes consoles too)
+  const LR = getGPURT(L.gpu), RR = getGPURT(R.gpu);
+  const rtTierFor = (r, key) => r ? (r.tier_by_res ? r.tier_by_res[key] : r.tier) : null;
+  const rtDetailFor = (r, key) => r ? ((r.detail_by_res && r.detail_by_res[key]) || r.detail || r.rt_source) : null;
+  html += sectionHeaderRow('🔆', 'Ray Tracing');
+  html += `<tr><td colspan="11" style="font-size:11px;font-style:italic;color:var(--text-faint);padding:8px 16px;">Different game suite &amp; test system than rasterization — not directly comparable. Desktop and console only; laptops and GTX-era cards aren't tracked (no RT hardware or no data).</td></tr>`;
+  if (!LR && !RR) {
+    html += `<tr><td colspan="11" style="text-align:center;padding:16px;color:var(--text-faint);font-size:12px;">Neither selected GPU has ray tracing data (laptop, or no RT hardware).</td></tr>`;
+  } else {
+    const rtBase = RT_DATA.find(r => r.gpu === 'GeForce RTX 5090');
+    const rtComp = (r) => (r && r.rt_4k!=null && r.rt_1440!=null && r.rt_1080!=null) ? (r.rt_4k+r.rt_1440+r.rt_1080)/3 : null;
+    const rtCompPct = (c) => c != null ? c / ((rtBase.rt_4k+rtBase.rt_1440+rtBase.rt_1080)/3) * 100 : null;
+    const rtTiers = [
+      { label: 'Composite Avg', lv: rtComp(LR), rv: rtComp(RR), lp: rtCompPct(rtComp(LR)), rp: rtCompPct(rtComp(RR)), ltier: rtTierFor(LR,'rt_1080'), rtier: rtTierFor(RR,'rt_1080'), ld: rtDetailFor(LR,'rt_1080'), rd: rtDetailFor(RR,'rt_1080') },
+      { label: '4K Ultra',     lv: LR?.rt_4k, rv: RR?.rt_4k, lp: LR?.rt_4k_pct, rp: RR?.rt_4k_pct, ltier: rtTierFor(LR,'rt_4k'), rtier: rtTierFor(RR,'rt_4k'), ld: rtDetailFor(LR,'rt_4k'), rd: rtDetailFor(RR,'rt_4k') },
+      { label: '1440p Ultra',  lv: LR?.rt_1440, rv: RR?.rt_1440, lp: LR?.rt_1440_pct, rp: RR?.rt_1440_pct, ltier: rtTierFor(LR,'rt_1440'), rtier: rtTierFor(RR,'rt_1440'), ld: rtDetailFor(LR,'rt_1440'), rd: rtDetailFor(RR,'rt_1440') },
+      { label: '1080p Ultra',  lv: LR?.rt_1080, rv: RR?.rt_1080, lp: LR?.rt_1080_pct, rp: RR?.rt_1080_pct, ltier: rtTierFor(LR,'rt_1080'), rtier: rtTierFor(RR,'rt_1080'), ld: rtDetailFor(LR,'rt_1080'), rd: rtDetailFor(RR,'rt_1080') },
+    ];
+    html += rtTiers.map(t => tierRow(t, false)).join('');
+  }
+
+  document.getElementById('compare-tbody').innerHTML = html;
+
+  // Specs
+  const specRows = [
+    { label: 'Architecture', lv: L.arch, rv: R.arch },
+    { label: 'Release Date', lv: L.date, rv: R.date },
+    { label: 'Memory',       lv: L.memory, rv: R.memory },
+    { label: 'TDP',          lv: L.wattage, rv: R.wattage },
+    { label: 'Type',         lv: L.type, rv: R.type },
+  ];
+  const sr = document.getElementById('specs-rows');
+  sr.innerHTML = specRows.map(s => `
+    <div class="spec-row">
+      <div class="sr-label">${s.label}</div>
+      <div class="sr-left">${s.lv || '—'}</div>
+      <div class="sr-right">${s.rv || '—'}</div>
+    </div>
+  `).join('');
+}
+
+// ── Ray Tracing lookup helpers (feed the merged Compare view and Hierarchy RT mode) ──
+function getGPURT(name) { return RT_DATA.find(r => r.gpu === name); }
+
+function specsFor(name) { return GPU_DATA.find(r => r.gpu === name) || {}; }
+
+function srcBadgeRT(src) {
+  if (src.includes('native')) return '<span class="src-badge src-native">TH 2026 Native</span>';
+  if (src.includes('2022 RT')) return '<span class="src-badge src-extrap">2026 + 2022 Blend</span>';
+  return '<span class="src-badge src-extrap">Projected</span>';
+}
+
+function populateSelectsRT() {
+  // no-op: RT now merges into the main Compare panel and reuses left-select/right-select
+}
+
+// ── Hierarchy mode toggle (Rasterization / Ray Tracing) ─────────────────────
+let hierMode = 'raster';
+const RT_BASE_COMP = (64.1 + 100.8 + 125.7) / 3;
+function round1(v) { return Math.round(v*10)/10; }
+
+function toHierRow(rt) {
+  const specs = specsFor(rt.gpu);
+  const comp = (rt.rt_4k != null && rt.rt_1440 != null && rt.rt_1080 != null)
+    ? (rt.rt_4k + rt.rt_1440 + rt.rt_1080) / 3 : null;
+  const tierAt = (key) => rt.tier_by_res ? rt.tier_by_res[key] : rt.tier;
+  const detailAt = (key) => (rt.detail_by_res && rt.detail_by_res[key]) || rt.detail || rt.rt_source;
+  return {
+    gpu: rt.gpu, type: specs.type || 'Desktop', arch: specs.arch || '—', memory: specs.memory || '—',
+    wattage: specs.wattage || '—', color: specs.color || '#888', source: rt.rt_source, detail: rt.detail,
+    comp: comp, comp_pct: comp != null ? round1(comp / RT_BASE_COMP * 100) : null,
+    fps_4k: rt.rt_4k, fps_4k_pct: rt.rt_4k_pct, fps_4k_tier: tierAt('rt_4k'), fps_4k_detail: detailAt('rt_4k'),
+    fps_1440: rt.rt_1440, fps_1440_pct: rt.rt_1440_pct, fps_1440_tier: tierAt('rt_1440'), fps_1440_detail: detailAt('rt_1440'),
+    fps_1080: rt.rt_1080, fps_1080_pct: rt.rt_1080_pct, fps_1080_tier: tierAt('rt_1080'), fps_1080_detail: detailAt('rt_1080'),
+    tier: tierAt('rt_1080'),
+  };
+}
+
+function setHierMode(mode) {
+  hierMode = mode;
+  document.getElementById('mode-raster').classList.toggle('active', mode === 'raster');
+  document.getElementById('mode-rt').classList.toggle('active', mode === 'rt');
+  sortCol = 'comp'; sortAsc = false;
+  document.querySelectorAll('.sort-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('btn-comp').classList.add('active');
+  filterTable();
+}
+
+// ── Hierarchy logic ────────────────────────────────────────────────────────
+let sortCol = 'comp';
+let sortAsc = false;
+let activeData = [...GPU_DATA];
+
+function setSortCol(col) {
+  if (sortCol === col) sortAsc = !sortAsc;
+  else { sortCol = col; sortAsc = col === 'gpu' || col === 'arch'; }
+  document.querySelectorAll('.sort-btn').forEach(b => b.classList.remove('active'));
+  const btnMap = {comp:'btn-comp','fps_4k':'btn-4k','fps_1440':'btn-1440','fps_1080':'btn-1080'};
+  if (btnMap[col]) document.getElementById(btnMap[col]).classList.add('active');
+  document.querySelectorAll('.hier-table th[id]').forEach(th => {
+    th.classList.remove('sorted');
+    th.querySelector('.sort-arrow').textContent = '↕';
+  });
+  const colMap = {comp:'col-comp','fps_4k':'col-4k','fps_1440':'col-1440','fps_1080':'col-1080',gpu:'col-gpu',arch:'col-arch',memory:'col-mem',wattage:'col-watt'};
+  const th = document.getElementById(colMap[col]);
+  if (th) {
+    th.classList.add('sorted');
+    th.querySelector('.sort-arrow').textContent = sortAsc ? '↑' : '↓';
+  }
+  renderTable();
+}
+
+function filterTable() {
+  const q = document.getElementById('search-box').value.toLowerCase();
+  const typeF = document.getElementById('type-filter').value;
+  const archF = document.getElementById('arch-filter').value;
+  const source = hierMode === 'rt' ? RT_DATA.map(toHierRow) : GPU_DATA;
+  activeData = source.filter(r => {
+    if (q && !r.gpu.toLowerCase().includes(q)) return false;
+    if (typeF && r.type !== typeF) return false;
+    if (archF && r.arch !== archF) return false;
+    return true;
+  });
+  renderTable();
+}
+
+function getBarColor(pct) {
+  if (!pct) return 'var(--text-faint)';
+  if (pct >= 80) return '#3ecf8e';
+  if (pct >= 60) return '#4f9cf9';
+  if (pct >= 40) return '#f5c842';
+  if (pct >= 20) return '#fb923c';
+  return '#f87171';
+}
+
+function srcBadge(src) {
+  if (src.includes('Native')) return '<span class="src-badge src-native">Native 2026</span>';
+  if (src.includes('Laptop')) return '<span class="src-badge src-laptop">Laptop Est.</span>';
+  if (src.includes('Console')) return '<span class="src-badge src-console">Console Est.</span>';
+  if (src.includes('2022')) return '<span class="src-badge src-extrap">2022 Proj.</span>';
+  return '<span class="src-badge src-extrap">Projected</span>';
+}
+
+function renderTable() {
+  const sorted = [...activeData].sort((a,b) => {
+    let av = a[sortCol], bv = b[sortCol];
+    if (av == null) av = sortAsc ? 'ZZZZZ' : -Infinity;
+    if (bv == null) bv = sortAsc ? 'ZZZZZ' : -Infinity;
+    if (typeof av === 'string') return sortAsc ? av.localeCompare(bv) : bv.localeCompare(av);
+    return sortAsc ? av - bv : bv - av;
+  });
+
+  const totalForMode = hierMode === 'rt' ? RT_DATA.length : GPU_DATA.length;
+  document.getElementById('results-count').textContent = hierMode === 'rt'
+    ? `Showing ${sorted.length} of ${totalForMode} GPUs with ray tracing data (desktop & console; laptops not tracked)`
+    : `Showing ${sorted.length} of ${totalForMode} GPUs`;
+
+  const tbody = document.getElementById('hier-tbody');
+  const baseline = GPU_DATA.find(r => r.gpu === 'GeForce RTX 5090');
+  const maxComp = baseline ? baseline.comp : 160.6;
+
+  tbody.innerHTML = sorted.map((r, i) => {
+    const pct = r.comp_pct;
+    const barW = pct ? Math.min(100, pct) : 0;
+    const typePill = r.type === 'Laptop' ? '<span class="type-pill type-laptop">L</span>'
+                   : r.type === 'Console' ? '<span class="type-pill type-console">C</span>' : '';
+
+    const fCell = (v, pct, tier, detail) => v
+      ? `<td class="fps-cell"><span class="fps-val">${v.toFixed(1)}</span>${tierMark(tier, detail)}<span class="fps-pct-small">${pct ? pct.toFixed(0)+'%' : ''}</span></td>`
+      : `<td class="fps-cell" style="color:var(--text-faint)">—</td>`;
+    const rowDetail = r.detail || r.source;
+
+    return `<tr style="background:${r.color}22;">
+      <td class="rank-num">${i+1}</td>
+      <td class="gpu-name-cell">
+        <span class="color-dot" style="background:${r.color};"></span>${r.gpu}${typePill}
+      </td>
+      <td class="fps-cell"><span class="fps-val">${r.comp ? r.comp.toFixed(1) : '—'}</span>${tierMark(r.tier, rowDetail)}</td>
+      ${fCell(r.fps_4k, r.fps_4k_pct, hierMode==='rt' ? r.fps_4k_tier : r.tier, hierMode==='rt' ? r.fps_4k_detail : rowDetail)}
+      ${fCell(r.fps_1440, r.fps_1440_pct, hierMode==='rt' ? r.fps_1440_tier : r.tier, hierMode==='rt' ? r.fps_1440_detail : rowDetail)}
+      ${fCell(r.fps_1080, r.fps_1080_pct, hierMode==='rt' ? r.fps_1080_tier : r.tier, hierMode==='rt' ? r.fps_1080_detail : rowDetail)}
+      <td class="bar-cell">
+        <div style="font-size:10px;color:var(--text-dim);margin-bottom:3px;">${pct ? pct.toFixed(1)+'%' : '—'}</div>
+        <div class="bar-wrap"><div class="bar-fill" style="width:${barW}%;background:${getBarColor(pct)};"></div></div>
+      </td>
+      <td class="arch-cell">${r.arch}</td>
+      <td class="mem-cell">${r.memory}</td>
+      <td class="mem-cell">${r.wattage}</td>
+      <td>${srcBadge(r.source)}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ── Panel switching ────────────────────────────────────────────────────────
+function showPanel(name) {
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('panel-'+name).classList.add('active');
+  event.target.classList.add('active');
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────
+populateSelects();
+populateSelectsRT();
+renderTable();
+</script>
+</body>
+</html>
